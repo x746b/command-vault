@@ -19,7 +19,7 @@ An MCP server that indexes commands from penetration testing writeups into SQLit
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/command-vault-mcp.git
+git clone https://github.com/x746b/command-vault-mcp.git
 cd command-vault-mcp
 
 # Install with uv (recommended)
