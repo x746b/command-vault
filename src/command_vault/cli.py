@@ -19,9 +19,9 @@ def get_default_config():
             str(Path.home() / '.local/share/command-vault/vault.db')
         ),
         'writeup_dirs': {
-            'boxes': os.environ.get('WRITEUPS_BOXES', '/home/xtk/labs/AI/boxes'),
-            'challenges': os.environ.get('WRITEUPS_CHALLENGES', '/home/xtk/labs/AI/challenges'),
-            'sherlocks': os.environ.get('WRITEUPS_SHERLOCKS', '/home/xtk/labs/AI/sherlocks'),
+            'boxes': os.environ.get('WRITEUPS_BOXES', ''),
+            'challenges': os.environ.get('WRITEUPS_CHALLENGES', ''),
+            'sherlocks': os.environ.get('WRITEUPS_SHERLOCKS', ''),
         }
     }
 
