@@ -60,7 +60,7 @@ class Indexer:
             )
 
         # Find all markdown files
-        md_files = list(path.glob("*.md"))
+        md_files = list(path.glob("**/*.md"))
         logger.info(f"Found {len(md_files)} markdown files in {directory}")
 
         # Get already indexed files if skipping existing
