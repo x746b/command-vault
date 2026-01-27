@@ -179,15 +179,29 @@ vault stats
 
 ## MCP Server Configuration
 
-Add to your Claude Code MCP configuration (`~/.claude/claude_code_config.json`):
+### CLI (Claude Code, Codex, Gemini)
+
+```bash
+claude mcp add command-vault \
+  -e VAULT_DB=~/.local/share/command-vault/vault.db \
+  -e WRITEUPS_BOXES=~/writeups/boxes \
+  -e WRITEUPS_CHALLENGES=~/writeups/challenges \
+  -e WRITEUPS_SHERLOCKS=~/writeups/sherlocks \
+  -- /path/to/command-vault/.venv/bin/python -m command_vault.server
+```
+
+Replace `claude` with `codex` or `gemini` for other AI coding assistants.
+
+### JSON Config
+
+Add to `~/.claude.json` or `.mcp.json`:
 
 ```json
 {
   "mcpServers": {
     "command-vault": {
-      "command": "uv",
-      "args": ["run", "command-vault"],
-      "cwd": "/path/to/command-vault-mcp",
+      "command": "/path/to/command-vault/.venv/bin/python",
+      "args": ["-m", "command_vault.server"],
       "env": {
         "VAULT_DB": "~/.local/share/command-vault/vault.db",
         "WRITEUPS_BOXES": "~/writeups/boxes",
