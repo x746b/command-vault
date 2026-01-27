@@ -1,4 +1,4 @@
-# Command Vault MCP
+# Command Vault (also MCP)
 
 > *"What was that certipy command I used last week for ESC8?"*
 > *"How did I exploit that shadow credentials thing again?"*
