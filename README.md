@@ -1,6 +1,11 @@
 # Command Vault MCP
 
-An MCP server that indexes commands from penetration testing writeups into SQLite, enabling fast contextual command search during labs and challenges.
+> *"What was that certipy command I used last week for ESC8?"*
+> *"How did I exploit that shadow credentials thing again?"*
+
+Ever found yourself digging through shell history, old notes, or writeups trying to recall that exact command you used before? Shell history is basic and lacks context. This tool solves that.
+
+Command Vault indexes commands from your penetration testing writeups into a searchable database with full context - what tool, what technique, which box. It's also MCP-ready, so your AI assistant can search your command history for you.
 
 ## Features
 
