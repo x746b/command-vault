@@ -92,14 +92,24 @@ vault index --add /path/to/writeups /another/path
 ## CLI Usage
 
 ```bash
-# Search commands
-vault search "bloodhound enumerate"
-vault search --tool certipy --category ad
-vault search --type box "ADCS"
+# Search by keyword
+vault search "kerberoasting"
+vault search "shadow credentials"
 
-# Suggest commands for a goal
-vault suggest "crack NTLM hash"
-vault suggest "enumerate AD users"
+# Search by tool
+vault search --tool certipy
+vault search --tool bloodyAD --limit 5
+
+# Search by category
+vault search --category ad
+vault search --category privesc
+
+# Filter by writeup type
+vault search --type box "ADCS"
+vault search --type challenge "SQLi"
+
+# Combine filters
+vault search --tool nmap --category recon --limit 10
 
 # Search scripts
 vault scripts --language python
@@ -110,6 +120,60 @@ vault tools --category ad
 vault categories
 
 # Show statistics
+vault stats
+
+# JSON output (for scripting)
+vault search "ESC16" --json
+```
+
+### Example Output
+
+```
+$ vault search "ESC16"
+
+============================================================
+Tool: certipy
+Source: BoxName.md [PrivESC]
+Purpose: Certipy v5.0.2 shows "ESC16 : Security Extension is disabled"...
+
+  certipy find -u 'svc_user' -hashes ':a1b2c3...' -dc-ip 10.10.10.100 -stdout -vulnerable
+
+  Template: certipy find -u 'svc_user' -hashes ':a1b2c3...' -dc-ip {IP} -stdout -vulnerable
+```
+
+```
+$ vault stats
+
+{
+  "writeups": {
+    "total": 150,
+    "boxes": 80,
+    "challenges": 50,
+    "sherlocks": 20
+  },
+  "commands": {
+    "total": 2500,
+    "by_category": {
+      "recon": 400,
+      "ad": 350,
+      "web": 300,
+      ...
+    }
+  }
+}
+```
+
+### Shell Alias
+
+Add to your `~/.bashrc` or `~/.zshrc`:
+
+```bash
+alias vault="cd /opt/command-vault-mcp && uv run vault"
+```
+
+Then use directly:
+```bash
+vault search "certipy"
 vault stats
 ```
 
