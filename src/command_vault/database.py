@@ -421,7 +421,8 @@ class Database:
                 else:
                     base_query += " WHERE " + " AND ".join(where_clauses)
 
-            base_query += f" LIMIT {limit}"
+            base_query += " LIMIT ?"
+            params.append(int(limit))
 
             rows = conn.execute(base_query, params).fetchall()
 
@@ -515,7 +516,8 @@ class Database:
                 else:
                     base_query += " WHERE " + " AND ".join(where_clauses)
 
-            base_query += f" LIMIT {limit}"
+            base_query += " LIMIT ?"
+            params.append(int(limit))
 
             rows = conn.execute(base_query, params).fetchall()
 
