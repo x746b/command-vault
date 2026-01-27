@@ -524,16 +524,7 @@ class WriteupParser:
         if first_word in TOOL_ALIASES:
             return TOOL_ALIASES[first_word]
 
-        # Check known tools
-        if first_word in TOOL_CATEGORIES:
-            return first_word
-
-        # Check prefixes
-        for prefix in TOOL_PREFIXES:
-            if first_word.startswith(prefix.rstrip('-')):
-                return first_word
-
-        # For python/python3 commands, try to get the script/module
+        # For python/python3 commands, try to get the script/module first
         if first_word in ('python', 'python3'):
             if len(parts) > 1:
                 second = parts[1]
@@ -546,6 +537,16 @@ class WriteupParser:
                     script = Path(second).stem
                     if script in TOOL_CATEGORIES:
                         return script
+            return first_word
+
+        # Check known tools
+        if first_word in TOOL_CATEGORIES:
+            return first_word
+
+        # Check prefixes
+        for prefix in TOOL_PREFIXES:
+            if first_word.startswith(prefix.rstrip('-')):
+                return first_word
 
         return first_word if first_word else None
 
