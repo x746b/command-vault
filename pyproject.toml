@@ -1,0 +1,26 @@
+[project]
+name = "command-vault-mcp"
+version = "0.1.0"
+description = "MCP server for searching security commands from penetration testing writeups"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "mcp>=1.0.0",
+    "pydantic>=2.0",
+]
+
+[project.scripts]
+command-vault = "command_vault.server:main"
+vault = "command_vault.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/command_vault"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+]
