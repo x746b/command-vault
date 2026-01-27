@@ -24,8 +24,8 @@ Command Vault indexes commands from your penetration testing writeups into a sea
 
 ```bash
 # Clone the repository
-git clone https://github.com/x746b/command-vault-mcp.git
-cd command-vault-mcp
+git clone https://github.com/x746b/command-vault.git
+cd command-vault
 
 # Install with uv (recommended)
 uv pip install -e .
