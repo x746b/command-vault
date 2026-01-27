@@ -30,8 +30,42 @@ FENCED_BLOCK_PATTERN = re.compile(
 BASH_COMMAND_PATTERN = re.compile(r'^\s*\$\s+(.+)$', re.MULTILINE)
 # Root shell prompt pattern - requires command to start with known tool (not comment-like text)
 BASH_ROOT_PROMPT_PATTERN = re.compile(r'^\s*#\s+(\S+.*)$', re.MULTILINE)
+# Zsh prompt pattern (➜  dirname command)
+# Also handles git branch in prompt: ➜  dirname git:(branch) command
+ZSH_PROMPT_PATTERN = re.compile(r'^➜\s+\S+\s+(?:git:\([^)]+\)\s+)?(.+)$', re.MULTILINE)
+# Virtualenv prefix pattern: (venv) ➜  dirname command
+VENV_ZSH_PROMPT_PATTERN = re.compile(r'^\([^)]+\)\s+➜\s+\S+\s+(?:git:\([^)]+\)\s+)?(.+)$', re.MULTILINE)
+# PowerShell patterns
 PS_COMMAND_PATTERN = re.compile(r'^PS [^>]*>\s*(.+)$', re.MULTILINE)
+# Evil-WinRM prompt: *Evil-WinRM* PS C:\...>
+EVIL_WINRM_PATTERN = re.compile(r'^\*Evil-WinRM\*\s+PS\s+[^>]+>\s*(.+)$', re.MULTILINE)
+# PowerView prompt: PV > or (LDAPS)-[host]-[user]\nPV >
+POWERVIEW_PATTERN = re.compile(r'^(?:\(LDAPS?\)-\[[^\]]+\]-\[[^\]]+\]\s*)?PV\s*>\s*(.+)$', re.MULTILINE)
+# Windows cmd prompt
 CMD_COMMAND_PATTERN = re.compile(r'^C:\\[^>]*>\s*(.+)$', re.MULTILINE)
+
+# Output lines to skip (common output patterns that shouldn't be treated as commands)
+OUTPUT_PATTERNS = [
+    re.compile(r'^Owner:\s', re.IGNORECASE),
+    re.compile(r'^Group:\s', re.IGNORECASE),
+    re.compile(r'^(Allow|Deny)\s+\S+', re.IGNORECASE),
+    re.compile(r'^Access list:', re.IGNORECASE),
+    re.compile(r'^distinguishedName:', re.IGNORECASE),
+    re.compile(r'^objectClass:', re.IGNORECASE),
+    re.compile(r'^(SMB|LDAP|LDAPS)\s+\d+\.\d+\.\d+\.\d+', re.IGNORECASE),  # nxc output
+    re.compile(r'^\[\*\]|\[\+\]|\[-\]'),  # Tool output markers
+    re.compile(r'^Impacket v'),
+    re.compile(r'^Certipy v'),
+    re.compile(r'^INFO:'),
+    re.compile(r'^\d{4}-\d{2}-\d{2}'),  # Timestamps
+    re.compile(r'^Listening on'),
+    re.compile(r'^Connection received'),
+    re.compile(r'^PRIVILEGES INFORMATION'),
+    re.compile(r'^Privilege Name'),
+    re.compile(r'^={3,}'),  # Separator lines
+    re.compile(r'^-{3,}'),
+    re.compile(r'^\s*\d+:\s+HAZE\\'),  # RID brute output
+]
 
 # Section headers
 SECTION_PATTERN = re.compile(r'^(#{1,3})\s+(.+)$', re.MULTILINE)
@@ -369,8 +403,12 @@ class WriteupParser:
         # Determine shell type and pattern
         if block.language in ('powershell', 'ps1'):
             shell_type = ShellType.POWERSHELL
-            # Try PS prompt first, then raw lines
-            matches = PS_COMMAND_PATTERN.findall(content)
+            # Try Evil-WinRM prompt first
+            matches = EVIL_WINRM_PATTERN.findall(content)
+            # Then standard PS prompt
+            matches.extend(PS_COMMAND_PATTERN.findall(content))
+            # Then PowerView prompt
+            matches.extend(POWERVIEW_PATTERN.findall(content))
             if not matches:
                 matches = [line.strip() for line in content.split('\n')
                           if line.strip() and not line.strip().startswith('#')]
@@ -397,6 +435,15 @@ class WriteupParser:
             # First try $ prompts (most reliable)
             matches = BASH_COMMAND_PATTERN.findall(content)
 
+            # Try zsh prompts (➜  dirname command)
+            matches.extend(ZSH_PROMPT_PATTERN.findall(content))
+            # Try virtualenv zsh prompts ((venv) ➜  dirname command)
+            matches.extend(VENV_ZSH_PROMPT_PATTERN.findall(content))
+
+            # Also handle Evil-WinRM/PowerView prompts in bash blocks (mixed sessions)
+            matches.extend(EVIL_WINRM_PATTERN.findall(content))
+            matches.extend(POWERVIEW_PATTERN.findall(content))
+
             # Also try # prompts but validate they look like commands
             for candidate in BASH_ROOT_PROMPT_PATTERN.findall(content):
                 if self._looks_like_command(candidate):
@@ -412,6 +459,10 @@ class WriteupParser:
         for cmd in matches:
             cmd = cmd.strip()
             if not cmd:
+                continue
+
+            # Skip if looks like output (not a command)
+            if self._is_output_line(cmd):
                 continue
 
             # Skip if should be filtered
@@ -500,6 +551,13 @@ class WriteupParser:
         if first_word in common_cmds:
             return True
 
+        return False
+
+    def _is_output_line(self, line: str) -> bool:
+        """Check if a line looks like command output (not a command itself)."""
+        for pattern in OUTPUT_PATTERNS:
+            if pattern.match(line):
+                return True
         return False
 
     def _identify_tool(self, command: str) -> Optional[str]:

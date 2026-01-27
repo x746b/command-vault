@@ -224,7 +224,22 @@ Add to your Claude Code MCP configuration (`~/.claude/claude_code_config.json`):
 
 ## Writeup Format
 
-The parser expects markdown files with code blocks. Supported formats:
+The parser expects markdown files with fenced code blocks. Commands are extracted based on shell prompts.
+
+### Supported Prompts
+
+| Prompt Style | Example | Extracted Command |
+|--------------|---------|-------------------|
+| Bash `$` | `$ nmap -sV 10.10.11.1` | `nmap -sV 10.10.11.1` |
+| Zsh `➜` | `➜  hackthebox nmap -sV 10.10.11.1` | `nmap -sV 10.10.11.1` |
+| Zsh + git | `➜  repo git:(main) python3 exploit.py` | `python3 exploit.py` |
+| Virtualenv | `(venv) ➜  project python3 solve.py` | `python3 solve.py` |
+| PowerShell | `PS C:\Users> Get-ADUser -Filter *` | `Get-ADUser -Filter *` |
+| Evil-WinRM | `*Evil-WinRM* PS C:\> whoami` | `whoami` |
+| PowerView | `PV > Get-DomainUser` | `Get-DomainUser` |
+| CMD | `C:\Windows> whoami` | `whoami` |
+
+### Example Writeup
 
 ~~~markdown
 ## Enumeration
@@ -233,16 +248,27 @@ The parser expects markdown files with code blocks. Supported formats:
 $ nmap -sC -sV 10.10.11.100
 ```
 
+```bash
+➜  boxname nmap -p- --min-rate 10000 10.10.11.100
+```
+
 ```powershell
-PS> Get-ADUser -Filter *
+*Evil-WinRM* PS C:\Users\admin> Get-ADUser -Filter *
 ```
 
 ```python
 #!/usr/bin/env python3
 from pwn import *
-# exploit code...
+# exploit code - detected as script
 ```
 ~~~
+
+### Output Filtering
+
+The parser automatically skips common output patterns that aren't commands:
+- Tool banners: `Impacket v`, `Certipy v`, `[*]`, `[+]`, `[-]`
+- ACL output: `Owner:`, `Group:`, `Allow`, `Deny`
+- Timestamps, separator lines (`---`, `===`)
 
 ### Writeup Types
 
