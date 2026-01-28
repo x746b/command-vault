@@ -438,7 +438,9 @@ class Database:
                     LEFT JOIN writeups w ON c.writeup_id = w.id
                     WHERE commands_fts MATCH ?
                 """
-                params.append(query)
+                # Sanitize FTS query: escape quotes and wrap in quotes for literal search
+                safe_query = '"' + query.replace('"', '""') + '"'
+                params.append(safe_query)
 
             # Tool filter
             if tool:
@@ -538,7 +540,9 @@ class Database:
                     LEFT JOIN writeups w ON s.writeup_id = w.id
                     WHERE scripts_fts MATCH ?
                 """
-                params.append(query)
+                # Sanitize FTS query: escape quotes and wrap in quotes for literal search
+                safe_query = '"' + query.replace('"', '""') + '"'
+                params.append(safe_query)
 
             # Language filter
             if language:
@@ -868,7 +872,9 @@ class Database:
                     LEFT JOIN tools t ON h.tool_id = t.id
                     WHERE history_fts MATCH ?
                 """
-                params.append(query)
+                # Sanitize FTS query: escape quotes and wrap in quotes for literal search
+                safe_query = '"' + query.replace('"', '""') + '"'
+                params.append(safe_query)
 
             # Tool filter
             if tool:
