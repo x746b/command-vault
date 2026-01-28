@@ -182,7 +182,7 @@ vault stats
 ### CLI (Claude Code, Codex, Gemini)
 
 ```bash
-claude mcp add command-vault \
+claude mcp add command-vault --scope user \
   -e VAULT_DB=~/.local/share/command-vault/vault.db \
   -e WRITEUPS_BOXES=~/writeups/boxes \
   -e WRITEUPS_CHALLENGES=~/writeups/challenges \
