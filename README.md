@@ -251,8 +251,7 @@ vault stats
 
 ## MCP Server Configuration
 
-### CLI (Claude Code, Codex, Gemini)
-
+#### Adding to Claude Code
 ```bash
 claude mcp add command-vault --scope user \
   -e VAULT_DB=~/.local/share/command-vault/vault.db \
@@ -262,9 +261,13 @@ claude mcp add command-vault --scope user \
   -- /path/to/command-vault/.venv/bin/python -m command_vault.server
 ```
 
-Replace `claude` with `codex` or `gemini` for other AI coding assistants.
+#### Adding to Codex CLI
 
-### JSON Config
+```bash
+codex mcp add command-vault --env VAULT_DB="$HOME/.local/share/command-vault/vault.db" -- /path/to/command-vault/.venv/bin/python -m command_vault.server
+```
+
+#### JSON Config
 
 Add to `~/.claude.json` or `.mcp.json`:
 
