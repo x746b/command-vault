@@ -5,7 +5,7 @@
 
 Ever found yourself digging through shell history, old notes, or writeups trying to recall that exact command you used before? Shell history is basic and lacks context. This tool solves that.
 
-Command Vault indexes commands from your penetration testing writeups into a searchable database with full context - what tool, what technique, which box. It's also MCP-ready, so your AI assistant can search your command history for you.
+Command Vault indexes commands from your penetration testing notes, reports, and shell history into a searchable database with full context - what tool, what technique, which box. It's MCP-ready, so your AI assistant can search both your documented commands and actual shell history for you.
 
 ## Features
 
