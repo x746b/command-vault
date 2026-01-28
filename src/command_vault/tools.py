@@ -1,14 +1,17 @@
 """MCP tool definitions for Command Vault."""
 
 import logging
+import time
+from pathlib import Path
 from typing import Optional
 
 from .database import Database
 from .indexer import Indexer
 from .security import SecurityFilter
+from .history_parser import HistoryParser
 from .models import (
     CommandResult, ScriptResult, ToolInfo, CategoryInfo,
-    VaultStats, IndexResult
+    VaultStats, IndexResult, HistoryIndexResult
 )
 
 logger = logging.getLogger(__name__)
@@ -276,5 +279,205 @@ class VaultTools:
                 'command_count': len(writeup_commands),
                 'script_count': len(writeup_scripts),
                 'tools_used': list(set(c.tool for c in writeup_commands if c.tool))
+            }
+        }
+
+    # =========================================================================
+    # HISTORY TOOLS
+    # =========================================================================
+
+    def index_history(
+        self,
+        path: str,
+        since: Optional[str] = None
+    ) -> dict:
+        """
+        Index shell history file - ALWAYS ADDS, never rebuilds.
+
+        Deduplication happens automatically via command_hash.
+        Running multiple times on same file is safe (idempotent).
+
+        Args:
+            path: Path to history file (e.g., ~/.zsh_history)
+            since: Only index commands after this ISO datetime
+
+        Returns:
+            Indexing statistics
+        """
+        start_time = time.time()
+
+        # Expand path
+        filepath = Path(path).expanduser()
+        if not filepath.exists():
+            return {'error': f'History file not found: {path}'}
+
+        # Initialize parser
+        parser = HistoryParser(self.security)
+
+        # Get existing hashes for deduplication
+        existing_hashes = self.db.get_history_hashes()
+
+        # Parse history file
+        try:
+            commands = parser.parse_file(str(filepath))
+        except Exception as e:
+            return {'error': f'Failed to parse history: {str(e)}'}
+
+        # Process commands
+        stats = {
+            'path': str(filepath),
+            'commands_processed': 0,
+            'commands_added': 0,
+            'commands_skipped_blocklist': 0,
+            'commands_skipped_duplicate': 0,
+            'commands_skipped_short': 0,
+            'sensitive_redacted': 0,
+            'tools_identified': set(),
+        }
+
+        for entry in commands:
+            stats['commands_processed'] += 1
+            cmd = entry['command']
+            timestamp = entry['timestamp'].isoformat() if entry['timestamp'] else None
+
+            # Filter by date if specified
+            if since and timestamp and timestamp < since:
+                continue
+
+            # Check blocklist
+            should_skip, reason = parser.should_skip_command(cmd)
+            if should_skip:
+                if reason == 'blocklist':
+                    stats['commands_skipped_blocklist'] += 1
+                elif reason == 'short':
+                    stats['commands_skipped_short'] += 1
+                continue
+
+            # Generate hash for deduplication
+            cmd_hash = parser.get_command_hash(cmd)
+            if cmd_hash in existing_hashes:
+                stats['commands_skipped_duplicate'] += 1
+                # Still update occurrence count
+                self.db.insert_history_command(
+                    command_hash=cmd_hash,
+                    raw_command=cmd,
+                    sanitized_command=cmd,  # Will be ignored on update
+                    command_template=None,
+                    tool_id=None,
+                    timestamp=timestamp,
+                    source_file=str(filepath),
+                    shell_type=entry['shell_type']
+                )
+                continue
+
+            # Sanitize command
+            sanitized = parser.sanitize_command(cmd, str(filepath))
+            if sanitized != cmd:
+                stats['sensitive_redacted'] += 1
+
+            # Templatize
+            template = parser.templatize_command(sanitized)
+
+            # Identify tool
+            tool_name = parser.identify_tool(cmd)
+            tool_id = None
+            if tool_name:
+                tool_id = self.db.get_or_create_tool(tool_name)
+                stats['tools_identified'].add(tool_name)
+
+            # Insert
+            cmd_id, is_new = self.db.insert_history_command(
+                command_hash=cmd_hash,
+                raw_command=cmd,
+                sanitized_command=sanitized,
+                command_template=template,
+                tool_id=tool_id,
+                timestamp=timestamp,
+                source_file=str(filepath),
+                shell_type=entry['shell_type']
+            )
+
+            if is_new:
+                stats['commands_added'] += 1
+                existing_hashes.add(cmd_hash)
+
+        duration = time.time() - start_time
+
+        return {
+            'path': stats['path'],
+            'commands_processed': stats['commands_processed'],
+            'commands_added': stats['commands_added'],
+            'commands_skipped_blocklist': stats['commands_skipped_blocklist'],
+            'commands_skipped_duplicate': stats['commands_skipped_duplicate'],
+            'commands_skipped_short': stats['commands_skipped_short'],
+            'sensitive_redacted': stats['sensitive_redacted'],
+            'tools_identified': len(stats['tools_identified']),
+            'duration_seconds': round(duration, 2)
+        }
+
+    def search_history(
+        self,
+        query: Optional[str] = None,
+        tool: Optional[str] = None,
+        since: Optional[str] = None,
+        limit: int = 20
+    ) -> list[dict]:
+        """
+        Search indexed history commands.
+
+        Args:
+            query: Free-text search query
+            tool: Filter by tool name
+            since: Filter by date (ISO format)
+            limit: Maximum results
+
+        Returns:
+            List of matching history commands
+        """
+        return self.db.search_history(
+            query=query,
+            tool=tool,
+            since=since,
+            limit=limit
+        )
+
+    def history_stats(self) -> dict:
+        """
+        Get statistics about indexed history.
+
+        Returns:
+            Statistics including total commands, tools, date range
+        """
+        return self.db.get_history_stats()
+
+    def clear_history(
+        self,
+        before: Optional[str] = None,
+        source_file: Optional[str] = None,
+        confirm: bool = False
+    ) -> dict:
+        """
+        Clear indexed history commands.
+
+        Args:
+            before: Clear commands before this ISO datetime
+            source_file: Clear commands from this specific file only
+            confirm: Safety flag - must be True to execute
+
+        Returns:
+            Result with number of commands deleted
+        """
+        if not confirm:
+            return {
+                'error': 'Safety check: set confirm=True to delete history commands',
+                'would_affect': 'all' if not before and not source_file else 'filtered'
+            }
+
+        deleted = self.db.clear_history(before=before, source_file=source_file)
+        return {
+            'deleted': deleted,
+            'filters': {
+                'before': before,
+                'source_file': source_file
             }
         }

@@ -10,10 +10,12 @@ Command Vault indexes commands from your penetration testing writeups into a sea
 ## Features
 
 - **Full-text search** across commands and scripts from your writeups
+- **Shell history indexing** - Index `~/.zsh_history` or `~/.bash_history` with deduplication
 - **Smart categorization** - 200+ security tools mapped to categories (recon, AD, web, privesc, etc.)
-- **Template generation** - Auto-replaces IPs, domains with placeholders
-- **Security filtering** - Flags and credentials automatically redacted
+- **Template generation** - Auto-replaces IPs, domains, passwords with placeholders
+- **Security filtering** - Credentials, API keys, and sensitive data automatically redacted
 - **Multiple writeup types** - Supports boxes, challenges, and Sherlocks
+- **Database maintenance** - Built-in VACUUM, ANALYZE, and FTS optimization
 
 ## Requirements
 
@@ -124,6 +126,76 @@ vault stats
 
 # JSON output (for scripting)
 vault search "ESC16" --json
+
+# Database maintenance
+vault maintain --all       # Run all maintenance tasks
+vault maintain --vacuum    # Reclaim disk space
+vault maintain --analyze   # Update query statistics
+vault maintain --optimize  # Optimize FTS indexes
+```
+
+## Shell History Indexing
+
+Index your shell history to search commands you've actually used (not just from writeups).
+
+### Index History
+
+```bash
+# Index zsh history (always adds, never rebuilds - safe to run multiple times)
+vault history index ~/.zsh_history
+
+# Index bash history
+vault history index ~/.bash_history
+
+# Index only commands after a specific date
+vault history index ~/.zsh_history --since "2024-01-01"
+```
+
+### Search History
+
+```bash
+# Free-text search
+vault history search "kerberoast"
+vault history search "nmap"
+
+# Filter by tool
+vault history search --tool certipy
+vault history search --tool bloodhound --limit 20
+
+# Combine query and tool filter
+vault history search "ADCS" --tool certipy
+```
+
+### History Statistics
+
+```bash
+vault history stats
+```
+
+Output:
+```json
+{
+  "total_commands": 24589,
+  "unique_tools": 1749,
+  "top_tools": [
+    {"tool": "nxc", "count": 1378},
+    {"tool": "curl", "count": 1295},
+    {"tool": "nmap", "count": 668}
+  ]
+}
+```
+
+### Clear History
+
+```bash
+# Clear all (requires --confirm flag for safety)
+vault history clear --confirm
+
+# Clear commands from specific file
+vault history clear --source ~/.zsh_history --confirm
+
+# Clear commands before a date
+vault history clear --before "2023-01-01" --confirm
 ```
 
 ### Example Output
@@ -224,6 +296,8 @@ Add to `~/.claude.json` or `.mcp.json`:
 
 ## MCP Tools Reference
 
+### Writeup Tools
+
 | Tool | Description |
 |------|-------------|
 | `search_commands` | Search commands by keyword, tool, or category |
@@ -235,6 +309,15 @@ Add to `~/.claude.json` or `.mcp.json`:
 | `get_writeup_summary` | Get summary from a specific writeup |
 | `index_writeups` | Index or re-index writeup directories |
 | `vault_stats` | Get statistics about indexed content |
+
+### History Tools
+
+| Tool | Description |
+|------|-------------|
+| `index_history` | Index shell history file (always adds, idempotent) |
+| `search_history` | Search indexed shell history commands |
+| `history_stats` | Get statistics about indexed history |
+| `clear_history` | Clear indexed history (requires `confirm=true`)
 
 ## Writeup Format
 
@@ -322,6 +405,102 @@ certipy auth -pfx administrator.pfx -domain domain.local
 
 All commands come with source context (which box, which section) so you can revisit the full writeup if needed.
 
+## Data Processing Pipelines
+
+Command Vault uses different processing pipelines for writeups and shell history to extract, sanitize, and index commands.
+
+### Writeup Processing Pipeline
+
+```
+┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
+│  Markdown File  │────▶│  Code Block      │────▶│  Command        │
+│  (.md)          │     │  Extraction      │     │  Detection      │
+└─────────────────┘     └──────────────────┘     └─────────────────┘
+                                                          │
+                        ┌──────────────────┐              ▼
+                        │  Database        │◀────┌─────────────────┐
+                        │  + FTS Index     │     │  Tool ID &      │
+                        └──────────────────┘     │  Categorization │
+                                 ▲               └─────────────────┘
+                                 │                        │
+                        ┌──────────────────┐              ▼
+                        │  Template        │◀────┌─────────────────┐
+                        │  Generation      │     │  Security       │
+                        └──────────────────┘     │  Filtering      │
+                                                 └─────────────────┘
+```
+
+**Stages:**
+
+1. **Code Block Extraction** - Parse markdown for fenced code blocks (`bash`, `powershell`, `python`)
+2. **Command Detection** - Identify shell prompts (`$`, `➜`, `PS>`, `*Evil-WinRM*`) and extract commands
+3. **Security Filtering** - Redact credentials, API keys, tokens using pattern matching
+4. **Tool Identification** - Map first token to known tools (200+ security tools)
+5. **Categorization** - Assign category (recon, AD, web, privesc, etc.)
+6. **Template Generation** - Replace IPs, domains, usernames with `{IP}`, `{DOMAIN}`, `{USER}` placeholders
+7. **FTS Indexing** - Store in SQLite with full-text search on command text and purpose
+
+### Shell History Processing Pipeline
+
+```
+┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
+│  History File   │────▶│  Format          │────▶│  Blocklist      │
+│  (.zsh_history) │     │  Detection       │     │  Filtering      │
+└─────────────────┘     └──────────────────┘     └─────────────────┘
+                                                          │
+                        ┌──────────────────┐              ▼
+                        │  Database        │◀────┌─────────────────┐
+                        │  + FTS Index     │     │  Deduplication  │
+                        └──────────────────┘     │  (SHA256 hash)  │
+                                 ▲               └─────────────────┘
+                                 │                        │
+                        ┌──────────────────┐              ▼
+                        │  Tool ID &       │◀────┌─────────────────┐
+                        │  Templatization  │     │  Security       │
+                        └──────────────────┘     │  Sanitization   │
+                                                 └─────────────────┘
+```
+
+**Stages:**
+
+1. **Format Detection** - Auto-detect zsh extended (`: timestamp:0;cmd`) or bash format
+2. **Blocklist Filtering** - Skip ~80 common non-security commands:
+   - Navigation: `cd`, `ls`, `pwd`, `clear`
+   - Editors: `vim`, `nano`, `code`
+   - Package managers: `apt`, `brew`, `pip`
+   - Git basics: `git status`, `git add`, `git commit`
+3. **Allowlist Override** - Always index security tools even if short:
+   - `nmap`, `ffuf`, `sqlmap`, `certipy`, `bloodhound-python`, etc.
+4. **Security Sanitization** - Redact sensitive patterns:
+   - Passwords: `-p 'secret'` → `-p {REDACTED}`
+   - API keys: `--api-key ABC123` → `--api-key {REDACTED}`
+   - Connection strings, tokens, hashes
+5. **Deduplication** - SHA256 hash of normalized command; duplicates increment `occurrence_count`
+6. **Tool Identification** - Map to known tools for filtering
+7. **Templatization** - Replace IPs, domains with placeholders
+8. **FTS Indexing** - Full-text search on sanitized command text
+
+### Security Patterns (Redacted)
+
+| Pattern Type | Examples |
+|--------------|----------|
+| Passwords | `-p 'pass'`, `--password=`, `-passwd` |
+| API Keys | `--api-key`, `-k`, `--token` |
+| Hashes | `-H 'aad3b435...'`, `--hashes` |
+| Connection Strings | `mysql://user:pass@host` |
+| Private Keys | `-----BEGIN.*KEY-----` |
+| AWS/Cloud | `AKIA...`, `aws_secret` |
+
+### Templatization Patterns
+
+| Original | Template |
+|----------|----------|
+| `10.10.11.100` | `{IP}` |
+| `192.168.1.50` | `{IP}` |
+| `domain.htb` | `{DOMAIN}` |
+| `dc.corp.local` | `{DOMAIN}` |
+| `/home/user/...` | `/home/{USER}/...` |
+
 ## Troubleshooting
 
 ### "vault: command not found"
@@ -352,11 +531,18 @@ export PATH="$HOME/.local/bin:$PATH"
 
 ### Database errors
 
-Reset the database:
+Run maintenance first:
+
+```bash
+vault maintain --all
+```
+
+If issues persist, reset the database:
 
 ```bash
 rm ~/.local/share/command-vault/vault.db
 vault index --rebuild
+vault history index ~/.zsh_history  # Re-index history if needed
 ```
 
 ### Commands not being extracted

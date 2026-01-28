@@ -100,6 +100,22 @@ CREATE TABLE IF NOT EXISTS writeup_tags (
     FOREIGN KEY (tag_id) REFERENCES tags(id)
 );
 
+-- Shell history commands (separate from writeup commands)
+CREATE TABLE IF NOT EXISTS history_commands (
+    id INTEGER PRIMARY KEY,
+    command_hash TEXT UNIQUE NOT NULL,
+    raw_command TEXT NOT NULL,
+    sanitized_command TEXT NOT NULL,
+    command_template TEXT,
+    tool_id INTEGER,
+    first_seen TIMESTAMP,
+    last_seen TIMESTAMP,
+    occurrence_count INTEGER DEFAULT 1,
+    source_file TEXT,
+    shell_type TEXT DEFAULT 'zsh',
+    FOREIGN KEY (tool_id) REFERENCES tools(id)
+);
+
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_commands_tool ON commands(tool_id);
 CREATE INDEX IF NOT EXISTS idx_commands_writeup ON commands(writeup_id);
@@ -107,6 +123,8 @@ CREATE INDEX IF NOT EXISTS idx_scripts_writeup ON scripts(writeup_id);
 CREATE INDEX IF NOT EXISTS idx_writeups_type ON writeups(writeup_type);
 CREATE INDEX IF NOT EXISTS idx_writeups_challenge_type ON writeups(challenge_type);
 CREATE INDEX IF NOT EXISTS idx_tools_category ON tools(category_id);
+CREATE INDEX IF NOT EXISTS idx_history_hash ON history_commands(command_hash);
+CREATE INDEX IF NOT EXISTS idx_history_tool ON history_commands(tool_id);
 """
 
 FTS_SCHEMA = """
@@ -161,6 +179,32 @@ CREATE TRIGGER IF NOT EXISTS scripts_au AFTER UPDATE ON scripts BEGIN
     INSERT INTO scripts_fts(rowid, code, purpose)
     VALUES (new.id, new.code, new.purpose);
 END;
+
+-- Full-text search for history commands
+CREATE VIRTUAL TABLE IF NOT EXISTS history_fts USING fts5(
+    raw_command,
+    sanitized_command,
+    content=history_commands,
+    content_rowid=id
+);
+
+-- Triggers for history FTS
+CREATE TRIGGER IF NOT EXISTS history_ai AFTER INSERT ON history_commands BEGIN
+    INSERT INTO history_fts(rowid, raw_command, sanitized_command)
+    VALUES (new.id, new.raw_command, new.sanitized_command);
+END;
+
+CREATE TRIGGER IF NOT EXISTS history_ad AFTER DELETE ON history_commands BEGIN
+    INSERT INTO history_fts(history_fts, rowid, raw_command, sanitized_command)
+    VALUES('delete', old.id, old.raw_command, old.sanitized_command);
+END;
+
+CREATE TRIGGER IF NOT EXISTS history_au AFTER UPDATE ON history_commands BEGIN
+    INSERT INTO history_fts(history_fts, rowid, raw_command, sanitized_command)
+    VALUES('delete', old.id, old.raw_command, old.sanitized_command);
+    INSERT INTO history_fts(rowid, raw_command, sanitized_command)
+    VALUES (new.id, new.raw_command, new.sanitized_command);
+END;
 """
 
 
@@ -204,15 +248,17 @@ class Database:
             # Drop FTS tables first (triggers depend on them)
             conn.execute("DROP TABLE IF EXISTS commands_fts")
             conn.execute("DROP TABLE IF EXISTS scripts_fts")
+            conn.execute("DROP TABLE IF EXISTS history_fts")
 
             # Drop triggers
             for trigger in ['commands_ai', 'commands_ad', 'commands_au',
-                           'scripts_ai', 'scripts_ad', 'scripts_au']:
+                           'scripts_ai', 'scripts_ad', 'scripts_au',
+                           'history_ai', 'history_ad', 'history_au']:
                 conn.execute(f"DROP TRIGGER IF EXISTS {trigger}")
 
             # Drop main tables
             for table in ['command_tags', 'writeup_tags', 'commands', 'scripts',
-                         'writeups', 'tools', 'tags', 'categories']:
+                         'writeups', 'tools', 'tags', 'categories', 'history_commands']:
                 conn.execute(f"DROP TABLE IF EXISTS {table}")
             conn.commit()
 
@@ -651,20 +697,68 @@ class Database:
 
             # Tool counts
             tool_total = conn.execute("SELECT COUNT(*) FROM tools").fetchone()[0]
-            top_tools = [row['name'] for row in conn.execute("""
+            # Exclude common non-security tools and garbage from top_10
+            excluded_tools = (
+                'cat', 'ls', 'cd', 'echo', 'pwd', 'cp', 'mv', 'rm', 'mkdir',
+                'chmod', 'chown', 'grep', 'find', 'head', 'tail', 'less', 'more',
+                'vi', 'vim', 'nano', 'touch', 'file', 'which', 'whoami', 'id',
+                'export', 'source', 'alias', 'unset', 'set', 'env', 'printenv',
+                'post', 'get', 'put', 'delete',  # HTTP verbs from output
+                '│', '├', '└', '─', '|', '-', '--', '>'  # Table/output garbage
+            )
+            placeholders = ','.join('?' * len(excluded_tools))
+            top_tools = [row['name'] for row in conn.execute(f"""
                 SELECT t.name, COUNT(c.id) as cnt
                 FROM tools t
                 JOIN commands c ON t.id = c.tool_id
+                WHERE t.name NOT IN ({placeholders})
+                AND length(t.name) > 1
                 GROUP BY t.id
                 ORDER BY cnt DESC
                 LIMIT 10
-            """).fetchall()]
+            """, excluded_tools).fetchall()]
+
+            # History stats
+            history_stats = None
+            try:
+                history_total = conn.execute("SELECT COUNT(*) FROM history_commands").fetchone()[0]
+                if history_total > 0:
+                    history_unique_tools = conn.execute(
+                        "SELECT COUNT(DISTINCT tool_id) FROM history_commands WHERE tool_id IS NOT NULL"
+                    ).fetchone()[0]
+
+                    history_top_tools = []
+                    for row in conn.execute("""
+                        SELECT t.name, COUNT(h.id) as cnt
+                        FROM history_commands h
+                        JOIN tools t ON h.tool_id = t.id
+                        GROUP BY t.id
+                        ORDER BY cnt DESC
+                        LIMIT 5
+                    """).fetchall():
+                        history_top_tools.append({'tool': row['name'], 'count': row['cnt']})
+
+                    history_sources = {}
+                    for row in conn.execute(
+                        "SELECT source_file, COUNT(*) as cnt FROM history_commands GROUP BY source_file"
+                    ).fetchall():
+                        history_sources[row['source_file']] = row['cnt']
+
+                    history_stats = {
+                        'total': history_total,
+                        'unique_tools': history_unique_tools,
+                        'top_tools': history_top_tools,
+                        'sources': history_sources
+                    }
+            except Exception:
+                pass  # Table might not exist in older databases
 
             return VaultStats(
                 writeups=writeup_stats,
                 commands={'total': cmd_total, 'by_category': cmd_by_cat},
                 scripts={'total': script_total, 'by_language': script_by_lang},
-                tools={'total': tool_total, 'top_10': top_tools}
+                tools={'total': tool_total, 'top_10': top_tools},
+                history=history_stats
             )
 
     def clear_writeup_data(self, writeup_id: int):
@@ -684,3 +778,295 @@ class Database:
         """Get total number of indexed writeups."""
         with self._get_connection() as conn:
             return conn.execute("SELECT COUNT(*) FROM writeups").fetchone()[0]
+
+    # =========================================================================
+    # HISTORY OPERATIONS
+    # =========================================================================
+
+    def get_history_hashes(self) -> set[str]:
+        """Get all existing history command hashes for deduplication."""
+        with self._get_connection() as conn:
+            rows = conn.execute("SELECT command_hash FROM history_commands").fetchall()
+            return {row['command_hash'] for row in rows}
+
+    def insert_history_command(
+        self,
+        command_hash: str,
+        raw_command: str,
+        sanitized_command: str,
+        command_template: Optional[str],
+        tool_id: Optional[int],
+        timestamp: Optional[str],
+        source_file: str,
+        shell_type: str = 'zsh'
+    ) -> tuple[int, bool]:
+        """
+        Insert a history command or update if exists.
+
+        Returns:
+            (command_id, is_new) - ID and whether it was newly inserted
+        """
+        with self._get_connection() as conn:
+            # Check if exists
+            existing = conn.execute(
+                "SELECT id, occurrence_count FROM history_commands WHERE command_hash = ?",
+                (command_hash,)
+            ).fetchone()
+
+            if existing:
+                # Update occurrence count and last_seen
+                conn.execute(
+                    """UPDATE history_commands
+                       SET occurrence_count = occurrence_count + 1,
+                           last_seen = COALESCE(?, last_seen)
+                       WHERE id = ?""",
+                    (timestamp, existing['id'])
+                )
+                conn.commit()
+                return existing['id'], False
+
+            # Insert new
+            cursor = conn.execute(
+                """INSERT INTO history_commands
+                   (command_hash, raw_command, sanitized_command, command_template,
+                    tool_id, first_seen, last_seen, occurrence_count, source_file, shell_type)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)""",
+                (command_hash, raw_command, sanitized_command, command_template,
+                 tool_id, timestamp, timestamp, source_file, shell_type)
+            )
+            conn.commit()
+            return cursor.lastrowid, True
+
+    def search_history(
+        self,
+        query: Optional[str] = None,
+        tool: Optional[str] = None,
+        since: Optional[str] = None,
+        limit: int = 20
+    ) -> list[dict]:
+        """Search history commands."""
+        with self._get_connection() as conn:
+            params = []
+            where_clauses = []
+
+            base_query = """
+                SELECT h.id, h.sanitized_command, h.command_template,
+                       h.first_seen, h.last_seen, h.occurrence_count,
+                       t.name as tool_name
+                FROM history_commands h
+                LEFT JOIN tools t ON h.tool_id = t.id
+            """
+
+            # FTS search
+            if query:
+                base_query = """
+                    SELECT h.id, h.sanitized_command, h.command_template,
+                           h.first_seen, h.last_seen, h.occurrence_count,
+                           t.name as tool_name
+                    FROM history_fts fts
+                    JOIN history_commands h ON fts.rowid = h.id
+                    LEFT JOIN tools t ON h.tool_id = t.id
+                    WHERE history_fts MATCH ?
+                """
+                params.append(query)
+
+            # Tool filter
+            if tool:
+                where_clauses.append("t.name LIKE ?")
+                params.append(f"%{tool}%")
+
+            # Date filter
+            if since:
+                where_clauses.append("h.first_seen >= ?")
+                params.append(since)
+
+            # Build final query
+            if where_clauses:
+                if query:
+                    base_query += " AND " + " AND ".join(where_clauses)
+                else:
+                    base_query += " WHERE " + " AND ".join(where_clauses)
+
+            base_query += " ORDER BY h.last_seen DESC LIMIT ?"
+            params.append(int(limit))
+
+            rows = conn.execute(base_query, params).fetchall()
+
+            return [
+                {
+                    'id': row['id'],
+                    'tool': row['tool_name'],
+                    'sanitized_command': row['sanitized_command'],
+                    'template': row['command_template'],
+                    'first_seen': row['first_seen'],
+                    'last_seen': row['last_seen'],
+                    'occurrence_count': row['occurrence_count'],
+                    'source': 'history'
+                }
+                for row in rows
+            ]
+
+    def get_history_stats(self) -> dict:
+        """Get statistics about indexed history commands."""
+        with self._get_connection() as conn:
+            # Total commands
+            total = conn.execute("SELECT COUNT(*) FROM history_commands").fetchone()[0]
+
+            # Unique tools
+            unique_tools = conn.execute(
+                "SELECT COUNT(DISTINCT tool_id) FROM history_commands WHERE tool_id IS NOT NULL"
+            ).fetchone()[0]
+
+            # Date range
+            date_range = conn.execute(
+                "SELECT MIN(first_seen) as first, MAX(last_seen) as last FROM history_commands"
+            ).fetchone()
+
+            # By source file
+            by_source = {}
+            for row in conn.execute(
+                "SELECT source_file, COUNT(*) as cnt FROM history_commands GROUP BY source_file"
+            ).fetchall():
+                by_source[row['source_file']] = row['cnt']
+
+            # Top tools
+            top_tools = []
+            for row in conn.execute("""
+                SELECT t.name, COUNT(h.id) as cnt
+                FROM history_commands h
+                JOIN tools t ON h.tool_id = t.id
+                GROUP BY t.id
+                ORDER BY cnt DESC
+                LIMIT 10
+            """).fetchall():
+                top_tools.append({'tool': row['name'], 'count': row['cnt']})
+
+            return {
+                'total_commands': total,
+                'unique_tools': unique_tools,
+                'date_range': {
+                    'first': date_range['first'],
+                    'last': date_range['last']
+                },
+                'by_source_file': by_source,
+                'top_tools': top_tools
+            }
+
+    def clear_history(
+        self,
+        before: Optional[str] = None,
+        source_file: Optional[str] = None
+    ) -> int:
+        """
+        Clear history commands.
+
+        Args:
+            before: Clear commands before this datetime
+            source_file: Clear commands from this specific file only
+
+        Returns:
+            Number of commands deleted
+        """
+        with self._get_connection() as conn:
+            where_clauses = []
+            params = []
+
+            if before:
+                where_clauses.append("last_seen < ?")
+                params.append(before)
+
+            if source_file:
+                where_clauses.append("source_file = ?")
+                params.append(source_file)
+
+            if where_clauses:
+                query = f"DELETE FROM history_commands WHERE {' AND '.join(where_clauses)}"
+            else:
+                query = "DELETE FROM history_commands"
+
+            cursor = conn.execute(query, params)
+            deleted = cursor.rowcount
+            conn.commit()
+
+            logger.info(f"Cleared {deleted} history commands")
+            return deleted
+
+    def maintain(
+        self,
+        vacuum: bool = False,
+        analyze: bool = False,
+        optimize_fts: bool = False
+    ) -> dict:
+        """
+        Perform database maintenance tasks.
+
+        Args:
+            vacuum: Reclaim disk space and defragment
+            analyze: Update query planner statistics
+            optimize_fts: Optimize FTS5 indexes
+
+        Returns:
+            Dict with results of each operation
+        """
+        import os
+        results = {
+            'vacuum': None,
+            'analyze': None,
+            'optimize_fts': None,
+            'size_before': None,
+            'size_after': None
+        }
+
+        # Get size before
+        if os.path.exists(self.db_path):
+            results['size_before'] = os.path.getsize(self.db_path)
+
+        with self._get_connection() as conn:
+            # VACUUM - reclaim space (must be outside transaction)
+            if vacuum:
+                try:
+                    conn.execute("VACUUM")
+                    results['vacuum'] = 'ok'
+                    logger.info("VACUUM completed")
+                except Exception as e:
+                    results['vacuum'] = f'error: {str(e)}'
+                    logger.error(f"VACUUM failed: {e}")
+
+            # ANALYZE - update statistics
+            if analyze:
+                try:
+                    conn.execute("ANALYZE")
+                    results['analyze'] = 'ok'
+                    logger.info("ANALYZE completed")
+                except Exception as e:
+                    results['analyze'] = f'error: {str(e)}'
+                    logger.error(f"ANALYZE failed: {e}")
+
+            # Optimize FTS indexes
+            if optimize_fts:
+                try:
+                    fts_tables = ['commands_fts', 'scripts_fts', 'history_fts']
+                    optimized = []
+                    for table in fts_tables:
+                        try:
+                            conn.execute(f"INSERT INTO {table}({table}) VALUES('optimize')")
+                            optimized.append(table)
+                        except sqlite3.OperationalError:
+                            pass  # Table might not exist
+                    results['optimize_fts'] = f'ok: {", ".join(optimized)}'
+                    logger.info(f"FTS optimization completed: {optimized}")
+                except Exception as e:
+                    results['optimize_fts'] = f'error: {str(e)}'
+                    logger.error(f"FTS optimization failed: {e}")
+
+        # Get size after
+        if os.path.exists(self.db_path):
+            results['size_after'] = os.path.getsize(self.db_path)
+
+        # Calculate space saved
+        if results['size_before'] and results['size_after']:
+            saved = results['size_before'] - results['size_after']
+            results['space_saved'] = saved
+            results['space_saved_human'] = f"{saved / 1024:.1f} KB" if saved > 0 else "0 KB"
+
+        return results

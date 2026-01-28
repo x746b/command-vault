@@ -248,6 +248,83 @@ async def list_tools() -> list[Tool]:
                 },
                 "required": ["filename"]
             }
+        ),
+        # History tools
+        Tool(
+            name="index_history",
+            description="Index shell history file (zsh_history, bash_history). "
+                       "ALWAYS ADDS commands, never rebuilds. Safe to run multiple times (idempotent). "
+                       "Deduplicates, filters blocklisted commands, and sanitizes sensitive data.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path to history file (e.g., ~/.zsh_history, ~/.bash_history)"
+                    },
+                    "since": {
+                        "type": "string",
+                        "description": "Only index commands after this ISO datetime (optional)"
+                    }
+                },
+                "required": ["path"]
+            }
+        ),
+        Tool(
+            name="search_history",
+            description="Search indexed shell history commands",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Free-text search query"
+                    },
+                    "tool": {
+                        "type": "string",
+                        "description": "Filter by tool name"
+                    },
+                    "since": {
+                        "type": "string",
+                        "description": "Filter by date (ISO format)"
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "Maximum results"
+                    }
+                }
+            }
+        ),
+        Tool(
+            name="history_stats",
+            description="Get statistics about indexed shell history",
+            inputSchema={
+                "type": "object",
+                "properties": {}
+            }
+        ),
+        Tool(
+            name="clear_history",
+            description="Clear indexed history commands. Requires confirm=true for safety.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "before": {
+                        "type": "string",
+                        "description": "Clear commands before this ISO datetime (optional)"
+                    },
+                    "source_file": {
+                        "type": "string",
+                        "description": "Clear commands from this specific file only (optional)"
+                    },
+                    "confirm": {
+                        "type": "boolean",
+                        "default": False,
+                        "description": "Safety flag - must be true to execute deletion"
+                    }
+                }
+            }
         )
     ]
 
@@ -313,6 +390,31 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
         elif name == "get_writeup_summary":
             result = vault_tools.get_writeup_summary(
                 filename=arguments["filename"]
+            )
+
+        # History tools
+        elif name == "index_history":
+            result = vault_tools.index_history(
+                path=arguments["path"],
+                since=arguments.get("since")
+            )
+
+        elif name == "search_history":
+            result = vault_tools.search_history(
+                query=arguments.get("query"),
+                tool=arguments.get("tool"),
+                since=arguments.get("since"),
+                limit=arguments.get("limit", 20)
+            )
+
+        elif name == "history_stats":
+            result = vault_tools.history_stats()
+
+        elif name == "clear_history":
+            result = vault_tools.clear_history(
+                before=arguments.get("before"),
+                source_file=arguments.get("source_file"),
+                confirm=arguments.get("confirm", False)
             )
 
         else:

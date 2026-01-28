@@ -109,6 +109,7 @@ class VaultStats(BaseModel):
     commands: dict  # {total, by_category}
     scripts: dict  # {total, by_language}
     tools: dict  # {total, top_10}
+    history: Optional[dict] = None  # {total, unique_tools, top_tools, sources}
 
 
 class IndexResult(BaseModel):
@@ -117,3 +118,50 @@ class IndexResult(BaseModel):
     scripts_extracted: int
     errors: list[str] = []
     duration_seconds: float
+
+
+# History models
+class HistoryCommand(BaseModel):
+    id: Optional[int] = None
+    command_hash: str
+    raw_command: str
+    sanitized_command: str
+    command_template: Optional[str] = None
+    tool_id: Optional[int] = None
+    tool_name: Optional[str] = None
+    first_seen: Optional[str] = None
+    last_seen: Optional[str] = None
+    occurrence_count: int = 1
+    source_file: Optional[str] = None
+    shell_type: str = "zsh"
+
+
+class HistoryCommandResult(BaseModel):
+    id: int
+    tool: Optional[str] = None
+    sanitized_command: str
+    template: Optional[str] = None
+    first_seen: Optional[str] = None
+    last_seen: Optional[str] = None
+    occurrence_count: int = 1
+    source: str = "history"
+
+
+class HistoryIndexResult(BaseModel):
+    path: str
+    commands_processed: int
+    commands_added: int
+    commands_skipped_blocklist: int
+    commands_skipped_duplicate: int
+    commands_skipped_short: int
+    sensitive_redacted: int
+    tools_identified: int
+    duration_seconds: float
+
+
+class HistoryStats(BaseModel):
+    total_commands: int
+    unique_tools: int
+    date_range: dict  # {first: datetime, last: datetime}
+    by_source_file: dict  # {path: count}
+    top_tools: list[dict]  # [{tool: str, count: int}]

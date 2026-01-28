@@ -39,6 +39,19 @@ Examples:
   vault index --add          # Add new writeups only
   vault index --rebuild      # Full database rebuild
   vault stats
+
+  # History commands
+  vault history index ~/.zsh_history    # Index history (always adds)
+  vault history search nmap             # Search history
+  vault history search --tool ffuf      # Filter by tool
+  vault history stats                   # Show history stats
+  vault history clear --confirm         # Clear all history
+
+  # Maintenance
+  vault maintain --all                  # Run all maintenance tasks
+  vault maintain --vacuum               # Reclaim disk space
+  vault maintain --analyze              # Update query statistics
+  vault maintain --optimize             # Optimize FTS indexes
         """
     )
 
@@ -87,6 +100,43 @@ Examples:
 
     # Stats command
     subparsers.add_parser('stats', help='Show database statistics')
+
+    # History command with subcommands
+    history_parser = subparsers.add_parser('history', help='Shell history commands')
+    history_subparsers = history_parser.add_subparsers(dest='history_command', help='History commands')
+
+    # history index
+    history_index = history_subparsers.add_parser('index', help='Index shell history file (always adds)')
+    history_index.add_argument('path', help='Path to history file (e.g., ~/.zsh_history)')
+    history_index.add_argument('--since', help='Only index commands after this ISO datetime')
+
+    # history search
+    history_search = history_subparsers.add_parser('search', help='Search indexed history')
+    history_search.add_argument('query', nargs='?', help='Search query')
+    history_search.add_argument('--tool', '-t', help='Filter by tool')
+    history_search.add_argument('--since', help='Filter by date (ISO format)')
+    history_search.add_argument('--limit', '-n', type=int, default=20, help='Max results')
+
+    # history stats
+    history_subparsers.add_parser('stats', help='Show history statistics')
+
+    # history clear
+    history_clear = history_subparsers.add_parser('clear', help='Clear indexed history')
+    history_clear.add_argument('--before', help='Clear commands before this ISO datetime')
+    history_clear.add_argument('--source', help='Clear commands from this file only')
+    history_clear.add_argument('--confirm', action='store_true', required=True,
+                               help='Required safety flag to confirm deletion')
+
+    # Maintain command
+    maintain_parser = subparsers.add_parser('maintain', help='Database maintenance')
+    maintain_parser.add_argument('--vacuum', action='store_true',
+                                 help='Reclaim disk space and defragment')
+    maintain_parser.add_argument('--analyze', action='store_true',
+                                 help='Update query planner statistics')
+    maintain_parser.add_argument('--optimize', action='store_true',
+                                 help='Optimize FTS indexes')
+    maintain_parser.add_argument('--all', '-a', action='store_true',
+                                 help='Run all maintenance tasks')
 
     args = parser.parse_args()
 
@@ -143,8 +193,42 @@ Examples:
     elif args.command == 'stats':
         result = vault.get_stats()
 
+    elif args.command == 'history':
+        if not args.history_command:
+            history_parser.print_help()
+            sys.exit(1)
+
+        if args.history_command == 'index':
+            result = vault.index_history(
+                path=args.path,
+                since=args.since
+            )
+        elif args.history_command == 'search':
+            result = vault.search_history(
+                query=args.query,
+                tool=args.tool,
+                since=args.since,
+                limit=args.limit
+            )
+        elif args.history_command == 'stats':
+            result = vault.history_stats()
+        elif args.history_command == 'clear':
+            result = vault.clear_history(
+                before=args.before,
+                source_file=args.source,
+                confirm=args.confirm
+            )
+
+    elif args.command == 'maintain':
+        do_all = args.all
+        result = db.maintain(
+            vacuum=args.vacuum or do_all,
+            analyze=args.analyze or do_all,
+            optimize_fts=args.optimize or do_all
+        )
+
     # Output
-    if args.json or args.command in ('stats', 'index'):
+    if args.json or args.command in ('stats', 'index', 'history', 'maintain'):
         print(json.dumps(result, indent=2))
     else:
         format_output(args.command, result)
