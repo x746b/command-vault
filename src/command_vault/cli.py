@@ -12,17 +12,39 @@ from .tools import VaultTools
 
 
 def get_default_config():
-    """Get default configuration."""
+    """Get default configuration.
+
+    Supports both unified (WRITEUPS) and legacy (WRITEUPS_BOXES, etc.) env vars.
+    - WRITEUPS: Single directory with full tag-based categorization
+    - WRITEUPS_BOXES, WRITEUPS_CHALLENGES, WRITEUPS_SHERLOCKS: Legacy dirs (directory-based type)
+
+    When WRITEUPS is set, writeups in that directory use content-based type detection
+    and full #hashtag extraction. Legacy directories use directory-based type detection.
+    """
+    writeup_dirs = {}
+
+    # Check for unified WRITEUPS env var (takes priority)
+    unified_dir = os.environ.get('WRITEUPS', '')
+    if unified_dir:
+        writeup_dirs['unified'] = unified_dir
+
+    # Also include legacy env vars for backward compatibility
+    # These work alongside unified dir
+    legacy_dirs = {
+        'boxes': os.environ.get('WRITEUPS_BOXES', ''),
+        'challenges': os.environ.get('WRITEUPS_CHALLENGES', ''),
+        'sherlocks': os.environ.get('WRITEUPS_SHERLOCKS', ''),
+    }
+    for key, value in legacy_dirs.items():
+        if value:
+            writeup_dirs[key] = value
+
     return {
         'db_path': os.environ.get(
             'VAULT_DB',
             str(Path.home() / '.local/share/command-vault/vault.db')
         ),
-        'writeup_dirs': {
-            'boxes': os.environ.get('WRITEUPS_BOXES', ''),
-            'challenges': os.environ.get('WRITEUPS_CHALLENGES', ''),
-            'sherlocks': os.environ.get('WRITEUPS_SHERLOCKS', ''),
-        }
+        'writeup_dirs': writeup_dirs
     }
 
 
@@ -34,8 +56,11 @@ def main():
 Examples:
   vault search "bloodhound enumerate"
   vault search --tool nmap --category recon
+  vault search --tag windows --tag ad   # Filter by tags
   vault suggest "crack NTLM hash"
   vault tools --category ad
+  vault tags                            # List all tags
+  vault tags --min-count 5              # List tags with 5+ writeups
   vault index --add          # Add new writeups only
   vault index --rebuild      # Full database rebuild
   vault stats
@@ -52,6 +77,13 @@ Examples:
   vault maintain --vacuum               # Reclaim disk space
   vault maintain --analyze              # Update query statistics
   vault maintain --optimize             # Optimize FTS indexes
+
+Environment Variables:
+  WRITEUPS             Unified writeup directory (full tag-based categorization)
+  WRITEUPS_BOXES       Legacy: boxes directory (type detected from path)
+  WRITEUPS_CHALLENGES  Legacy: challenges directory (type detected from path)
+  WRITEUPS_SHERLOCKS   Legacy: sherlocks directory (type detected from path)
+  VAULT_DB             Database path (default: ~/.local/share/command-vault/vault.db)
         """
     )
 
@@ -65,8 +97,10 @@ Examples:
     search_parser.add_argument('query', nargs='?', help='Search query')
     search_parser.add_argument('--tool', '-t', help='Filter by tool')
     search_parser.add_argument('--category', '-c', help='Filter by category')
+    search_parser.add_argument('--tag', '-g', action='append', dest='tags',
+                               help='Filter by tag (repeatable, e.g., -g windows -g ad)')
     search_parser.add_argument('--type', '-T', choices=['box', 'challenge', 'sherlock'],
-                               help='Filter by writeup type')
+                               help='[Deprecated: use --tag] Filter by writeup type')
     search_parser.add_argument('--limit', '-n', type=int, default=10, help='Max results')
 
     # Scripts command
@@ -86,6 +120,11 @@ Examples:
 
     # Categories command
     subparsers.add_parser('categories', help='List categories')
+
+    # Tags command
+    tags_parser = subparsers.add_parser('tags', help='List all tags')
+    tags_parser.add_argument('--min-count', '-m', type=int, default=1,
+                             help='Minimum writeup count to include a tag')
 
     # Index command
     index_parser = subparsers.add_parser('index', help='Index writeups')
@@ -161,6 +200,7 @@ Examples:
             tool=args.tool,
             category=args.category,
             writeup_type=args.type,
+            tags=args.tags,
             limit=args.limit
         )
 
@@ -180,6 +220,9 @@ Examples:
 
     elif args.command == 'categories':
         result = vault.list_categories()
+
+    elif args.command == 'tags':
+        result = vault.list_tags(min_count=args.min_count)
 
     elif args.command == 'index':
         directories = args.directories if args.directories else None
@@ -228,7 +271,7 @@ Examples:
         )
 
     # Output
-    if args.json or args.command in ('stats', 'index', 'history', 'maintain'):
+    if args.json or args.command in ('stats', 'index', 'history', 'maintain', 'tags'):
         print(json.dumps(result, indent=2))
     else:
         format_output(args.command, result)
@@ -283,6 +326,12 @@ def format_output(command: str, result):
         print("-" * 45)
         for item in result:
             print(f"{item['name']:<20} {item['tool_count']:<10} {item['command_count']}")
+
+    elif command == 'tags':
+        print(f"{'Tag':<25} {'Writeups':<12} {'Commands'}")
+        print("-" * 50)
+        for item in result:
+            print(f"{item['name']:<25} {item['writeup_count']:<12} {item['command_count']}")
 
 
 if __name__ == '__main__':

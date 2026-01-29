@@ -150,6 +150,18 @@ class VaultTools:
         results = self.db.list_categories()
         return [r.model_dump() for r in results]
 
+    def list_tags(self, min_count: int = 1) -> list[dict]:
+        """
+        List all tags with usage counts.
+
+        Args:
+            min_count: Minimum writeup count to include a tag
+
+        Returns:
+            List of tags with writeup and command counts
+        """
+        return self.db.list_tags(min_count=min_count)
+
     def suggest_command(
         self,
         goal: str,

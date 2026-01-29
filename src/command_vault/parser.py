@@ -28,6 +28,8 @@ FENCED_BLOCK_PATTERN = re.compile(
 # Shell command lines with $ prompt (user shell)
 # Note: We only use $ prompt, not # (root), because # in code blocks usually means comments
 BASH_COMMAND_PATTERN = re.compile(r'^\s*\$\s+(.+)$', re.MULTILINE)
+# Full prompt pattern: user@host:path$ command (common in writeups)
+FULL_PROMPT_PATTERN = re.compile(r'^[a-zA-Z0-9_-]+@[a-zA-Z0-9_-]+:[^\$]*\$\s+(.+)$', re.MULTILINE)
 # Root shell prompt pattern - requires command to start with known tool (not comment-like text)
 BASH_ROOT_PROMPT_PATTERN = re.compile(r'^\s*#\s+(\S+.*)$', re.MULTILINE)
 # Zsh prompt pattern (➜  dirname command)
@@ -73,6 +75,23 @@ SECTION_PATTERN = re.compile(r'^(#{1,3})\s+(.+)$', re.MULTILINE)
 # Tags pattern (from header)
 TAGS_PATTERN = re.compile(r'Tags?:\s*(.+)$', re.MULTILINE | re.IGNORECASE)
 TAG_EXTRACT_PATTERN = re.compile(r'#(\w+)')
+
+# Inline hashtag pattern for full-content scanning
+# Matches #word but not code patterns like #include, #pragma, #define, etc.
+INLINE_HASHTAG_PATTERN = re.compile(r'(?<![/\w])#([a-zA-Z][a-zA-Z0-9_-]*)\b')
+
+# Tags to filter out (code/markdown artifacts, not real tags)
+HASHTAG_BLOCKLIST = frozenset({
+    # C/C++ preprocessor directives
+    'include', 'define', 'ifdef', 'ifndef', 'endif', 'pragma', 'undef', 'error',
+    'warning', 'line', 'elif', 'else', 'if',
+    # Markdown anchors and common false positives
+    'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'toc', 'top', 'bottom', 'section',
+    # Python/shell comments that might look like tags
+    'todo', 'fixme', 'note', 'hack', 'xxx',
+    # Common HTML/CSS
+    'id', 'class', 'style', 'href', 'src',
+})
 
 # Title pattern (first H1)
 TITLE_PATTERN = re.compile(r'^#\s+(.+)$', re.MULTILINE)
@@ -162,9 +181,19 @@ class WriteupParser:
     def __init__(self, security_filter: Optional[SecurityFilter] = None):
         self.security = security_filter or SecurityFilter()
 
-    def detect_writeup_type(self, filepath: str) -> dict:
+    def detect_writeup_type(
+        self,
+        filepath: str,
+        content: Optional[str] = None,
+        source_dir: Optional[str] = None
+    ) -> dict:
         """
-        Detect writeup type from filepath.
+        Detect writeup type from filepath and/or content.
+
+        Args:
+            filepath: Path to the writeup file
+            content: File content (only used for unified dir)
+            source_dir: 'unified' for WRITEUPS env var, None for legacy dirs
 
         Returns:
             dict with 'type', 'challenge_type', 'difficulty'
@@ -172,42 +201,97 @@ class WriteupParser:
         path = Path(filepath)
         filename = path.name
 
-        # Detect by directory
-        if '/boxes/' in filepath or '\\boxes\\' in filepath:
-            difficulty = self._extract_difficulty(filename)
+        # Legacy behavior: detect by directory path
+        if source_dir != 'unified':
+            if '/boxes/' in filepath or '\\boxes\\' in filepath:
+                difficulty = self._extract_difficulty(filename)
+                return {
+                    'type': WriteupType.BOX,
+                    'challenge_type': None,
+                    'difficulty': difficulty
+                }
+
+            elif '/challenges/' in filepath or '\\challenges\\' in filepath:
+                # Format: "Name (type).md"
+                match = re.search(r'\(([^)]+)\)\.md$', filename, re.IGNORECASE)
+                challenge_type = match.group(1).lower().strip() if match else 'misc'
+                # Normalize challenge type
+                challenge_type = challenge_type.replace(' - ', '_').replace(' ', '_')
+                return {
+                    'type': WriteupType.CHALLENGE,
+                    'challenge_type': challenge_type,
+                    'difficulty': None
+                }
+
+            elif '/sherlocks/' in filepath or '\\sherlocks\\' in filepath:
+                # Format: "Name (Difficulty).md"
+                match = re.search(r'\(([^)]+)\)\.md$', filename, re.IGNORECASE)
+                difficulty = match.group(1) if match else None
+                return {
+                    'type': WriteupType.SHERLOCK,
+                    'challenge_type': 'dfir',
+                    'difficulty': difficulty
+                }
+
+            # Default for legacy (no matching directory)
             return {
                 'type': WriteupType.BOX,
                 'challenge_type': None,
-                'difficulty': difficulty
-            }
-
-        elif '/challenges/' in filepath or '\\challenges\\' in filepath:
-            # Format: "Name (type).md"
-            match = re.search(r'\(([^)]+)\)\.md$', filename, re.IGNORECASE)
-            challenge_type = match.group(1).lower().strip() if match else 'misc'
-            # Normalize challenge type
-            challenge_type = challenge_type.replace(' - ', '_').replace(' ', '_')
-            return {
-                'type': WriteupType.CHALLENGE,
-                'challenge_type': challenge_type,
                 'difficulty': None
             }
 
-        elif '/sherlocks/' in filepath or '\\sherlocks\\' in filepath:
-            # Format: "Name (Difficulty).md"
-            match = re.search(r'\(([^)]+)\)\.md$', filename, re.IGNORECASE)
-            difficulty = match.group(1) if match else None
-            return {
-                'type': WriteupType.SHERLOCK,
-                'challenge_type': 'dfir',
-                'difficulty': difficulty
-            }
+        # Unified dir behavior: detect from content tags and filename
+        detected_type = WriteupType.BOX
+        challenge_type = None
+        difficulty = self._extract_difficulty(filename)
 
-        # Default
+        # 1. Check content tags (#sherlock, #challenge, #box)
+        if content:
+            content_lower = content.lower()
+            # Extract inline tags for type detection
+            content_tags = set()
+            for match in INLINE_HASHTAG_PATTERN.finditer(content):
+                content_tags.add(match.group(1).lower())
+
+            if 'sherlock' in content_tags:
+                detected_type = WriteupType.SHERLOCK
+                challenge_type = 'dfir'
+            elif 'challenge' in content_tags:
+                detected_type = WriteupType.CHALLENGE
+                # Try to find challenge type from tags
+                challenge_types = {'web', 'pwn', 'crypto', 'forensics', 'reversing',
+                                   'misc', 'mobile', 'hardware', 'blockchain', 'osint'}
+                found_types = content_tags.intersection(challenge_types)
+                if found_types:
+                    challenge_type = sorted(found_types)[0]
+                else:
+                    challenge_type = 'misc'
+            elif 'box' in content_tags:
+                detected_type = WriteupType.BOX
+
+        # 2. Fallback: check filename pattern "Name (type).md"
+        if detected_type == WriteupType.BOX and not challenge_type:
+            match = re.search(r'\(([^)]+)\)\.md$', filename, re.IGNORECASE)
+            if match:
+                type_hint = match.group(1).lower().strip()
+                if type_hint in ('sherlock', 'dfir', 'forensics'):
+                    detected_type = WriteupType.SHERLOCK
+                    challenge_type = 'dfir'
+                    difficulty = None
+                elif type_hint in ('challenge', 'ctf'):
+                    detected_type = WriteupType.CHALLENGE
+                    challenge_type = 'misc'
+                elif type_hint in ('web', 'pwn', 'crypto', 'mobile', 'reversing',
+                                   'misc', 'hardware', 'blockchain', 'osint'):
+                    detected_type = WriteupType.CHALLENGE
+                    challenge_type = type_hint
+                elif type_hint in ('easy', 'medium', 'hard', 'insane', 'veryeasy'):
+                    difficulty = type_hint.title()
+
         return {
-            'type': WriteupType.BOX,
-            'challenge_type': None,
-            'difficulty': None
+            'type': detected_type,
+            'challenge_type': challenge_type,
+            'difficulty': difficulty
         }
 
     def _extract_difficulty(self, text: str) -> Optional[str]:
@@ -218,13 +302,53 @@ class WriteupParser:
             return diff
         return None
 
-    def parse_writeup(self, filepath: str, content: str) -> Writeup:
+    def _extract_all_tags(self, content: str, full_scan: bool = False) -> list[str]:
+        """
+        Extract tags from content.
+
+        Args:
+            content: Markdown content
+            full_scan: If True, scan entire content for #hashtags.
+                      If False (legacy), only extract from "Tags:" header line.
+
+        Returns:
+            List of lowercase tag names (deduplicated)
+        """
+        tags = set()
+
+        # Always extract from "Tags:" header line (legacy behavior)
+        tags_match = TAGS_PATTERN.search(content)
+        if tags_match:
+            tags_line = tags_match.group(1)
+            for tag in TAG_EXTRACT_PATTERN.findall(tags_line):
+                tag_lower = tag.lower()
+                if tag_lower not in HASHTAG_BLOCKLIST:
+                    tags.add(tag_lower)
+
+        # If full_scan enabled, also scan entire content for #hashtags
+        if full_scan:
+            for match in INLINE_HASHTAG_PATTERN.finditer(content):
+                tag = match.group(1).lower()
+                if tag not in HASHTAG_BLOCKLIST and len(tag) >= 2:
+                    tags.add(tag)
+
+        return sorted(tags)
+
+    def parse_writeup(
+        self,
+        filepath: str,
+        content: str,
+        full_scan: bool = False,
+        source_dir: Optional[str] = None
+    ) -> Writeup:
         """
         Parse writeup metadata.
 
         Args:
             filepath: Path to the writeup file
             content: File content
+            full_scan: If True, extract #hashtags from entire content (unified dir mode)
+            source_dir: Source directory type ('unified' for WRITEUPS env var, None for legacy)
 
         Returns:
             Writeup object with metadata
@@ -232,8 +356,12 @@ class WriteupParser:
         path = Path(filepath)
         filename = path.name
 
-        # Detect type
-        type_info = self.detect_writeup_type(filepath)
+        # Detect type (uses content-based detection for unified dir)
+        type_info = self.detect_writeup_type(
+            filepath,
+            content=content if source_dir == 'unified' else None,
+            source_dir=source_dir
+        )
 
         # Extract title
         title_match = TITLE_PATTERN.search(content)
@@ -244,12 +372,19 @@ class WriteupParser:
         if not difficulty:
             difficulty = self._extract_difficulty(title)
 
-        # Extract tags
-        tags = []
-        tags_match = TAGS_PATTERN.search(content)
-        if tags_match:
-            tags_line = tags_match.group(1)
-            tags = TAG_EXTRACT_PATTERN.findall(tags_line)
+        # Extract tags (full scan for unified dir)
+        tags = self._extract_all_tags(content, full_scan=full_scan)
+
+        # For unified dir, auto-add type as a tag
+        if source_dir == 'unified':
+            type_tag = type_info['type'].value  # 'box', 'challenge', 'sherlock'
+            if type_tag not in tags:
+                tags.append(type_tag)
+                tags.sort()
+            # Also add challenge_type as tag if present
+            if type_info['challenge_type'] and type_info['challenge_type'] not in tags:
+                tags.append(type_info['challenge_type'])
+                tags.sort()
 
         return Writeup(
             filename=filename,
@@ -434,6 +569,9 @@ class WriteupParser:
             shell_type = ShellType.BASH
             # First try $ prompts (most reliable)
             matches = BASH_COMMAND_PATTERN.findall(content)
+
+            # Try full prompt pattern (user@host:path$ command)
+            matches.extend(FULL_PROMPT_PATTERN.findall(content))
 
             # Try zsh prompts (➜  dirname command)
             matches.extend(ZSH_PROMPT_PATTERN.findall(content))
@@ -624,12 +762,19 @@ class WriteupParser:
             flags.append(match.group(1))
         return flags
 
-    def parse_file(self, filepath: str) -> tuple[Writeup, list[ExtractedCommand], list[Script]]:
+    def parse_file(
+        self,
+        filepath: str,
+        full_scan: bool = False,
+        source_dir: Optional[str] = None
+    ) -> tuple[Writeup, list[ExtractedCommand], list[Script]]:
         """
         Parse a writeup file completely.
 
         Args:
             filepath: Path to the markdown file
+            full_scan: If True, extract #hashtags from entire content (unified dir mode)
+            source_dir: Source directory type ('unified' for WRITEUPS env var, None for legacy)
 
         Returns:
             Tuple of (Writeup, list of commands, list of scripts)
@@ -641,7 +786,7 @@ class WriteupParser:
         content = self.security.sanitize_text(content, source_file=path.name)
 
         # Parse metadata
-        writeup = self.parse_writeup(filepath, content)
+        writeup = self.parse_writeup(filepath, content, full_scan=full_scan, source_dir=source_dir)
 
         # Extract code blocks
         blocks = self.extract_code_blocks(content)

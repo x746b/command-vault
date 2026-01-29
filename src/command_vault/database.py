@@ -462,6 +462,22 @@ class Database:
                 where_clauses.append("w.challenge_type = ?")
                 params.append(challenge_type)
 
+            # Tag filter - filter by writeup tags (AND logic: all tags must match)
+            if tags:
+                tag_list = [t.lower() for t in tags]
+                placeholders = ','.join('?' * len(tag_list))
+                where_clauses.append(f"""
+                    w.id IN (
+                        SELECT wt.writeup_id FROM writeup_tags wt
+                        JOIN tags tg ON wt.tag_id = tg.id
+                        WHERE LOWER(tg.name) IN ({placeholders})
+                        GROUP BY wt.writeup_id
+                        HAVING COUNT(DISTINCT tg.id) = ?
+                    )
+                """)
+                params.extend(tag_list)
+                params.append(len(tag_list))
+
             # Build final query
             if where_clauses:
                 if query:
@@ -662,6 +678,41 @@ class Database:
                     tool_count=row['tool_count'],
                     command_count=row['cmd_count']
                 )
+                for row in rows
+            ]
+
+    def list_tags(self, min_count: int = 1) -> list[dict]:
+        """
+        List all tags with their usage counts.
+
+        Args:
+            min_count: Minimum writeup count to include a tag (default 1)
+
+        Returns:
+            List of dicts with 'name', 'writeup_count', 'command_count'
+        """
+        with self._get_connection() as conn:
+            rows = conn.execute("""
+                SELECT t.name,
+                       COUNT(DISTINCT wt.writeup_id) as writeup_count,
+                       (SELECT COUNT(*) FROM commands c
+                        WHERE c.writeup_id IN (
+                            SELECT wt2.writeup_id FROM writeup_tags wt2
+                            WHERE wt2.tag_id = t.id
+                        )) as command_count
+                FROM tags t
+                LEFT JOIN writeup_tags wt ON t.id = wt.tag_id
+                GROUP BY t.id
+                HAVING writeup_count >= ?
+                ORDER BY writeup_count DESC, t.name
+            """, (min_count,)).fetchall()
+
+            return [
+                {
+                    'name': row['name'],
+                    'writeup_count': row['writeup_count'],
+                    'command_count': row['command_count']
+                }
                 for row in rows
             ]
 

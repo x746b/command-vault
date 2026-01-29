@@ -22,17 +22,39 @@ logger = logging.getLogger(__name__)
 
 
 def get_config() -> dict:
-    """Get configuration from environment variables."""
+    """Get configuration from environment variables.
+
+    Supports both unified (WRITEUPS) and legacy (WRITEUPS_BOXES, etc.) env vars.
+    - WRITEUPS: Single directory with full tag-based categorization
+    - WRITEUPS_BOXES, WRITEUPS_CHALLENGES, WRITEUPS_SHERLOCKS: Legacy dirs (directory-based type)
+
+    When WRITEUPS is set, writeups in that directory use content-based type detection
+    and full #hashtag extraction. Legacy directories use directory-based type detection.
+    """
+    writeup_dirs = {}
+
+    # Check for unified WRITEUPS env var (takes priority)
+    unified_dir = os.environ.get('WRITEUPS', '')
+    if unified_dir:
+        writeup_dirs['unified'] = unified_dir
+
+    # Also include legacy env vars for backward compatibility
+    # These work alongside unified dir
+    legacy_dirs = {
+        'boxes': os.environ.get('WRITEUPS_BOXES', ''),
+        'challenges': os.environ.get('WRITEUPS_CHALLENGES', ''),
+        'sherlocks': os.environ.get('WRITEUPS_SHERLOCKS', ''),
+    }
+    for key, value in legacy_dirs.items():
+        if value:
+            writeup_dirs[key] = value
+
     return {
         'db_path': os.environ.get(
             'VAULT_DB',
             str(Path.home() / '.local/share/command-vault/vault.db')
         ),
-        'writeup_dirs': {
-            'boxes': os.environ.get('WRITEUPS_BOXES', ''),
-            'challenges': os.environ.get('WRITEUPS_CHALLENGES', ''),
-            'sherlocks': os.environ.get('WRITEUPS_SHERLOCKS', ''),
-        }
+        'writeup_dirs': writeup_dirs
     }
 
 
@@ -82,14 +104,19 @@ async def list_tools() -> list[Tool]:
                         "type": "string",
                         "description": "Filter by category (recon, web, ad, privesc, dfir, etc.)"
                     },
+                    "tags": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Filter by tags (e.g., ['windows', 'ad']). All tags must match."
+                    },
                     "writeup_type": {
                         "type": "string",
                         "enum": ["box", "challenge", "sherlock"],
-                        "description": "Filter by writeup source type"
+                        "description": "[Deprecated: use tags instead] Filter by writeup source type"
                     },
                     "challenge_type": {
                         "type": "string",
-                        "description": "Filter by challenge type (web, pwn, crypto, mobile, etc.)"
+                        "description": "[Deprecated: use tags instead] Filter by challenge type (web, pwn, crypto, mobile, etc.)"
                     },
                     "limit": {
                         "type": "integer",
@@ -182,6 +209,20 @@ async def list_tools() -> list[Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {}
+            }
+        ),
+        Tool(
+            name="list_tags",
+            description="List all tags with usage counts",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "min_count": {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "Minimum writeup count to include a tag"
+                    }
+                }
             }
         ),
         Tool(
@@ -336,12 +377,22 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
 
     try:
         if name == "search_commands":
+            # Support both tags array and deprecated writeup_type/challenge_type
+            tags = arguments.get("tags")
+
+            # Map deprecated params to tags for backward compat
+            writeup_type = arguments.get("writeup_type")
+            challenge_type = arguments.get("challenge_type")
+
+            # If using deprecated params without tags, still use them directly
+            # for backward compatibility with older databases
             result = vault_tools.search_commands(
                 query=arguments.get("query"),
                 tool=arguments.get("tool"),
                 category=arguments.get("category"),
-                writeup_type=arguments.get("writeup_type"),
-                challenge_type=arguments.get("challenge_type"),
+                writeup_type=writeup_type,
+                challenge_type=challenge_type,
+                tags=tags,
                 limit=arguments.get("limit", 10)
             )
 
@@ -370,6 +421,11 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
 
         elif name == "list_categories":
             result = vault_tools.list_categories()
+
+        elif name == "list_tags":
+            result = vault_tools.list_tags(
+                min_count=arguments.get("min_count", 1)
+            )
 
         elif name == "suggest_command":
             result = vault_tools.suggest_command(

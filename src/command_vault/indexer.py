@@ -29,7 +29,8 @@ class Indexer:
         self,
         directory: str,
         force_rebuild: bool = False,
-        skip_existing: bool = False
+        skip_existing: bool = False,
+        source_dir: Optional[str] = None
     ) -> IndexResult:
         """
         Index all markdown files in a directory.
@@ -38,6 +39,7 @@ class Indexer:
             directory: Path to directory containing writeups
             force_rebuild: If True, clear existing data first
             skip_existing: If True, skip files that are already indexed
+            source_dir: Directory type ('unified', 'boxes', 'challenges', 'sherlocks')
 
         Returns:
             IndexResult with statistics
@@ -73,7 +75,11 @@ class Indexer:
                 continue
 
             try:
-                result = self.index_file(str(md_file), force_rebuild=force_rebuild)
+                result = self.index_file(
+                    str(md_file),
+                    force_rebuild=force_rebuild,
+                    source_dir=source_dir
+                )
                 files_processed += 1
                 commands_extracted += result['commands']
                 scripts_extracted += result['scripts']
@@ -105,19 +111,31 @@ class Indexer:
             duration_seconds=duration
         )
 
-    def index_file(self, filepath: str, force_rebuild: bool = False) -> dict:
+    def index_file(
+        self,
+        filepath: str,
+        force_rebuild: bool = False,
+        source_dir: Optional[str] = None
+    ) -> dict:
         """
         Index a single writeup file.
 
         Args:
             filepath: Path to the markdown file
             force_rebuild: If True, clear existing data for this writeup
+            source_dir: Directory type ('unified', 'boxes', 'challenges', 'sherlocks')
 
         Returns:
             Dict with counts: {commands, scripts}
         """
-        # Parse the file
-        writeup, commands, scripts = self.parser.parse_file(filepath)
+        # Parse the file with appropriate settings based on source_dir
+        # 'unified' dir enables full content scanning and content-based type detection
+        full_scan = (source_dir == 'unified')
+        writeup, commands, scripts = self.parser.parse_file(
+            filepath,
+            full_scan=full_scan,
+            source_dir=source_dir
+        )
 
         # Insert or update writeup
         writeup_id = self.db.insert_writeup(writeup)
@@ -203,7 +221,8 @@ class Indexer:
             result = self.index_directory(
                 path,
                 force_rebuild=False,
-                skip_existing=add_new_only
+                skip_existing=add_new_only,
+                source_dir=name  # 'unified', 'boxes', 'challenges', 'sherlocks'
             )
 
             total_result.files_processed += result.files_processed
