@@ -10,11 +10,13 @@ Command Vault indexes commands from your penetration testing notes, reports, and
 ## Features
 
 - **Full-text search** across commands and scripts from your writeups
+- **Tag-based filtering** - Search by `#hashtags` extracted from writeup content
 - **Shell history indexing** - Index `~/.zsh_history` or `~/.bash_history` with deduplication
 - **Smart categorization** - 200+ security tools mapped to categories (recon, AD, web, privesc, etc.)
 - **Template generation** - Auto-replaces IPs, domains, passwords with placeholders
 - **Security filtering** - Credentials, API keys, and sensitive data automatically redacted
 - **Multiple writeup types** - Supports boxes, challenges, and Sherlocks
+- **Unified directory mode** - Single directory with content-based type detection
 - **Database maintenance** - Built-in VACUUM, ANALYZE, and FTS optimization
 
 ## Requirements
@@ -38,9 +40,15 @@ pip install -e .
 
 ## Quick Start
 
-1. **Set up your writeup directories** (environment variables or defaults):
+1. **Set up your writeup directories**:
 
 ```bash
+# Option A: Unified directory (recommended for new setups)
+# Uses #hashtags in content for categorization
+export WRITEUPS="$HOME/writeups"
+
+# Option B: Separate directories (legacy)
+# Type detected from directory path
 export WRITEUPS_BOXES="$HOME/writeups/boxes"
 export WRITEUPS_CHALLENGES="$HOME/writeups/challenges"
 export WRITEUPS_SHERLOCKS="$HOME/writeups/sherlocks"
@@ -57,6 +65,7 @@ vault index --rebuild
 ```bash
 vault search "kerberoasting"
 vault search --tool nmap --category recon
+vault search --tag windows --tag ad    # Filter by tags
 ```
 
 ## Indexing Writeups
@@ -106,12 +115,21 @@ vault search --tool bloodyAD --limit 5
 vault search --category ad
 vault search --category privesc
 
-# Filter by writeup type
+# Search by tags (from writeup #hashtags)
+vault search --tag windows --tag ad      # AND logic: both tags must match
+vault search -g malware -g dfir          # Short form
+
+# Filter by writeup type (legacy, prefer --tag)
 vault search --type box "ADCS"
 vault search --type challenge "SQLi"
 
 # Combine filters
 vault search --tool nmap --category recon --limit 10
+vault search --tag windows --tool mimikatz
+
+# List tags
+vault tags                    # List all tags with counts
+vault tags --min-count 5      # Only tags with 5+ writeups
 
 # Search scripts
 vault scripts --language python
@@ -253,6 +271,13 @@ vault stats
 
 #### Adding to Claude Code
 ```bash
+# Option A: Unified directory (recommended)
+claude mcp add command-vault --scope user \
+  -e VAULT_DB=~/.local/share/command-vault/vault.db \
+  -e WRITEUPS=~/writeups \
+  -- /path/to/command-vault/.venv/bin/python -m command_vault.server
+
+# Option B: Separate directories (legacy)
 claude mcp add command-vault --scope user \
   -e VAULT_DB=~/.local/share/command-vault/vault.db \
   -e WRITEUPS_BOXES=~/writeups/boxes \
@@ -279,6 +304,23 @@ Add to `~/.claude.json` or `.mcp.json`:
       "args": ["-m", "command_vault.server"],
       "env": {
         "VAULT_DB": "~/.local/share/command-vault/vault.db",
+        "WRITEUPS": "~/writeups"
+      }
+    }
+  }
+}
+```
+
+Or with legacy separate directories:
+
+```json
+{
+  "mcpServers": {
+    "command-vault": {
+      "command": "/path/to/command-vault/.venv/bin/python",
+      "args": ["-m", "command_vault.server"],
+      "env": {
+        "VAULT_DB": "~/.local/share/command-vault/vault.db",
         "WRITEUPS_BOXES": "~/writeups/boxes",
         "WRITEUPS_CHALLENGES": "~/writeups/challenges",
         "WRITEUPS_SHERLOCKS": "~/writeups/sherlocks"
@@ -293,9 +335,15 @@ Add to `~/.claude.json` or `.mcp.json`:
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `VAULT_DB` | Path to SQLite database | `~/.local/share/command-vault/vault.db` |
-| `WRITEUPS_BOXES` | Boxes writeups directory | None |
-| `WRITEUPS_CHALLENGES` | Challenges writeups directory | None |
-| `WRITEUPS_SHERLOCKS` | Sherlocks writeups directory | None |
+| `WRITEUPS` | Unified writeup directory (full #hashtag extraction) | None |
+| `WRITEUPS_BOXES` | Boxes writeups directory (legacy, path-based type) | None |
+| `WRITEUPS_CHALLENGES` | Challenges writeups directory (legacy, path-based type) | None |
+| `WRITEUPS_SHERLOCKS` | Sherlocks writeups directory (legacy, path-based type) | None |
+
+**Note:** You can use both `WRITEUPS` and legacy env vars together. The unified directory enables:
+- Full `#hashtag` extraction from content
+- Content-based type detection (`#box`, `#challenge`, `#sherlock` tags)
+- Auto-tagging of writeup type
 
 ## MCP Tools Reference
 
@@ -303,12 +351,13 @@ Add to `~/.claude.json` or `.mcp.json`:
 
 | Tool | Description |
 |------|-------------|
-| `search_commands` | Search commands by keyword, tool, or category |
+| `search_commands` | Search commands by keyword, tool, category, or tags |
 | `search_scripts` | Search exploit scripts (Python, JS/Frida, PowerShell) |
 | `get_tool_examples` | Get usage examples for a specific tool |
 | `suggest_command` | Get command suggestions for a goal |
 | `list_tools` | List indexed tools |
 | `list_categories` | List categories with counts |
+| `list_tags` | List all tags with usage counts |
 | `get_writeup_summary` | Get summary from a specific writeup |
 | `index_writeups` | Index or re-index writeup directories |
 | `vault_stats` | Get statistics about indexed content |
@@ -331,6 +380,7 @@ The parser expects markdown files with fenced code blocks. Commands are extracte
 | Prompt Style | Example | Extracted Command |
 |--------------|---------|-------------------|
 | Bash `$` | `$ nmap -sV 10.10.11.1` | `nmap -sV 10.10.11.1` |
+| Full prompt | `user@host:~/path$ nmap -sV 10.10.11.1` | `nmap -sV 10.10.11.1` |
 | Zsh `➜` | `➜  hackthebox nmap -sV 10.10.11.1` | `nmap -sV 10.10.11.1` |
 | Zsh + git | `➜  repo git:(main) python3 exploit.py` | `python3 exploit.py` |
 | Virtualenv | `(venv) ➜  project python3 solve.py` | `python3 solve.py` |
@@ -375,6 +425,35 @@ The parser automatically skips common output patterns that aren't commands:
 - **Boxes**: Machine writeups (detected from `/boxes/` in path)
 - **Challenges**: CTF challenges with type in filename, e.g., `Challenge (web).md`
 - **Sherlocks**: DFIR investigations (detected from `/sherlocks/` in path)
+
+### Tag-Based Categorization (Unified Directory)
+
+When using the `WRITEUPS` env var (unified directory), the parser:
+
+1. **Extracts `#hashtags`** from entire content (not just header)
+2. **Detects type from tags**: `#box`, `#challenge`, `#sherlock`
+3. **Auto-adds type as tag** for consistent filtering
+
+Example writeup with inline tags:
+
+```markdown
+# Machine Writeup
+
+#box #windows #ad #easy
+
+## Enumeration
+
+Found Active Directory with #kerberoasting vulnerability...
+```
+
+All tags (`box`, `windows`, `ad`, `easy`, `kerberoasting`) are extracted and searchable:
+
+```bash
+vault search --tag windows --tag ad
+vault tags  # List all tags
+```
+
+**Legacy directories** (`WRITEUPS_BOXES`, etc.) continue to use path-based type detection and only extract tags from `Tags:` header lines.
 
 ## Example: Real-World Usage
 
