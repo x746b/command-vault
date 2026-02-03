@@ -13,17 +13,17 @@ def parser():
 
 class TestWriteupTypeDetection:
     def test_detect_box(self, parser):
-        result = parser.detect_writeup_type('/home/user/labs/AI/boxes/Authority.md')
+        result = parser.detect_writeup_type('/home/user/labs/boxes/Authority.md')
         assert result['type'] == WriteupType.BOX
         assert result['challenge_type'] is None
 
     def test_detect_challenge(self, parser):
-        result = parser.detect_writeup_type('/home/user/labs/AI/challenges/0xBOverchunked (web).md')
+        result = parser.detect_writeup_type('/home/user/labs/challenges/0xBOverchunked (web).md')
         assert result['type'] == WriteupType.CHALLENGE
         assert result['challenge_type'] == 'web'
 
     def test_detect_sherlock(self, parser):
-        result = parser.detect_writeup_type('/home/user/labs/AI/sherlocks/Takedown (Easy).md')
+        result = parser.detect_writeup_type('/home/user/labs/sherlocks/Takedown (Easy).md')
         assert result['type'] == WriteupType.SHERLOCK
         assert result['difficulty'] == 'Easy'
 
