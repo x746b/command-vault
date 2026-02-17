@@ -1,6 +1,6 @@
 [project]
 name = "command-vault-mcp"
-version = "0.3.0"
+version = "0.5.0"
 description = "Search security commands from your writeups and shell history with full context - what tool, what technique, which box"
 readme = "README.md"
 requires-python = ">=3.11"

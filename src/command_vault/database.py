@@ -17,6 +17,26 @@ from .categories import get_tool_category, get_category_description, CATEGORIES
 logger = logging.getLogger(__name__)
 
 
+def _build_fts_query(query: str) -> str:
+    """Build an FTS5 query from user input.
+
+    Tokenizes input and joins with OR so multi-word queries like
+    "certipy ESC" match documents containing either word, not just
+    the exact phrase.  Single-word queries pass through unchanged.
+    FTS5 special characters are stripped to prevent syntax errors.
+    """
+    # Strip FTS5 operators/special chars that could cause syntax errors
+    cleaned = query.replace('"', ' ').replace("'", ' ')
+    tokens = cleaned.split()
+    if not tokens:
+        return '""'
+    if len(tokens) == 1:
+        # Single word: quote it for safe literal match
+        return '"' + tokens[0] + '"'
+    # Multi-word: each token quoted, joined with OR
+    return ' OR '.join('"' + t + '"' for t in tokens)
+
+
 SCHEMA = """
 -- Writeup sources metadata
 CREATE TABLE IF NOT EXISTS writeups (
@@ -438,9 +458,7 @@ class Database:
                     LEFT JOIN writeups w ON c.writeup_id = w.id
                     WHERE commands_fts MATCH ?
                 """
-                # Sanitize FTS query: escape quotes and wrap in quotes for literal search
-                safe_query = '"' + query.replace('"', '""') + '"'
-                params.append(safe_query)
+                params.append(_build_fts_query(query))
 
             # Tool filter
             if tool:
@@ -556,9 +574,7 @@ class Database:
                     LEFT JOIN writeups w ON s.writeup_id = w.id
                     WHERE scripts_fts MATCH ?
                 """
-                # Sanitize FTS query: escape quotes and wrap in quotes for literal search
-                safe_query = '"' + query.replace('"', '""') + '"'
-                params.append(safe_query)
+                params.append(_build_fts_query(query))
 
             # Language filter
             if language:
@@ -923,9 +939,7 @@ class Database:
                     LEFT JOIN tools t ON h.tool_id = t.id
                     WHERE history_fts MATCH ?
                 """
-                # Sanitize FTS query: escape quotes and wrap in quotes for literal search
-                safe_query = '"' + query.replace('"', '""') + '"'
-                params.append(safe_query)
+                params.append(_build_fts_query(query))
 
             # Tool filter
             if tool:
