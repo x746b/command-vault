@@ -135,6 +135,7 @@ Environment Variables:
     prose_parser.add_argument('--tag', '-g', action='append', dest='tags',
                                help='Filter by tag (repeatable)')
     prose_parser.add_argument('--limit', '-n', type=int, default=10, help='Max results')
+    prose_parser.add_argument('--chars', '-l', type=int, default=300, help='Max chars per passage (0 for full text)')
 
     # Index command
     index_parser = subparsers.add_parser('index', help='Index writeups')
@@ -292,10 +293,10 @@ Environment Variables:
     if args.json or args.command in ('stats', 'index', 'history', 'maintain', 'tags'):
         print(json.dumps(result, indent=2))
     else:
-        format_output(args.command, result)
+        format_output(args.command, result, args=args)
 
 
-def format_output(command: str, result):
+def format_output(command: str, result, args=None):
     """Format output for human readability."""
     if not result:
         print("No results found.")
@@ -346,13 +347,13 @@ def format_output(command: str, result):
             print(f"{item['name']:<20} {item['tool_count']:<10} {item['command_count']}")
 
     elif command == 'prose':
+        max_chars = getattr(args, 'chars', 300)
         for item in result:
             filename = item['source'].get('filename', '')
             section = item.get('section', '')
             content = item['content']
-            # Truncate to ~300 chars
-            if len(content) > 300:
-                content = content[:300] + '...'
+            if max_chars > 0 and len(content) > max_chars:
+                content = content[:max_chars] + '...'
             print(f"\n{'='*60}")
             print(f"Source: {filename} [{section}]")
             print(f"\n  {content}")
