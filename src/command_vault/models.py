@@ -104,11 +104,19 @@ class CategoryInfo(BaseModel):
     command_count: int = 0
 
 
+class ChunkResult(BaseModel):
+    id: int
+    section: Optional[str] = None
+    content: str
+    source: dict  # {filename, writeup_type, title}
+
+
 class VaultStats(BaseModel):
     writeups: dict  # {total, boxes, challenges, sherlocks}
     commands: dict  # {total, by_category}
     scripts: dict  # {total, by_language}
     tools: dict  # {total, top_10}
+    chunks: Optional[dict] = None  # {total}
     history: Optional[dict] = None  # {total, unique_tools, top_tools, sources}
 
 
@@ -116,6 +124,7 @@ class IndexResult(BaseModel):
     files_processed: int
     commands_extracted: int
     scripts_extracted: int
+    chunks_extracted: int = 0
     errors: list[str] = []
     duration_seconds: float
 

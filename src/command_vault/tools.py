@@ -10,7 +10,7 @@ from .indexer import Indexer
 from .security import SecurityFilter
 from .history_parser import HistoryParser
 from .models import (
-    CommandResult, ScriptResult, ToolInfo, CategoryInfo,
+    CommandResult, ScriptResult, ChunkResult, ToolInfo, CategoryInfo,
     VaultStats, IndexResult, HistoryIndexResult
 )
 
@@ -293,6 +293,33 @@ class VaultTools:
                 'tools_used': list(set(c.tool for c in writeup_commands if c.tool))
             }
         }
+
+    def search_writeup_prose(
+        self,
+        query: str,
+        writeup_type: Optional[str] = None,
+        tags: Optional[list[str]] = None,
+        limit: int = 10
+    ) -> list[dict]:
+        """
+        Search writeup prose chunks for methodology and analysis text.
+
+        Args:
+            query: Free-text search query (e.g., "NTLM relay", "ADCS ESC8")
+            writeup_type: Filter by writeup type (box, challenge, sherlock)
+            tags: Filter by tags
+            limit: Maximum results
+
+        Returns:
+            List of matching prose chunks with source metadata
+        """
+        results = self.db.search_chunks(
+            query=query,
+            writeup_type=writeup_type,
+            tags=tags,
+            limit=limit
+        )
+        return [r.model_dump() for r in results]
 
     # =========================================================================
     # HISTORY TOOLS

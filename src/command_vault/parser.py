@@ -762,12 +762,98 @@ class WriteupParser:
             flags.append(match.group(1))
         return flags
 
+    def extract_prose_chunks(self, content: str) -> list[dict]:
+        """
+        Extract prose paragraphs from markdown content as searchable chunks.
+
+        Skips code blocks, image embeds, Tags: lines, and short fragments.
+
+        Args:
+            content: Markdown content
+
+        Returns:
+            List of {section, content, chunk_index}
+        """
+        chunks = []
+        current_section = "Introduction"
+        in_code_block = False
+        paragraph_lines = []
+        chunk_index = 0
+
+        def _flush_paragraph():
+            nonlocal chunk_index
+            if not paragraph_lines:
+                return
+            text = ' '.join(paragraph_lines).strip()
+            # Skip short paragraphs (noise like "Let's check:" or single words)
+            if len(text) >= 30:
+                chunks.append({
+                    'section': current_section,
+                    'content': text,
+                    'chunk_index': chunk_index,
+                })
+                chunk_index += 1
+            paragraph_lines.clear()
+
+        for line in content.split('\n'):
+            stripped = line.strip()
+
+            # Toggle code block state
+            if stripped.startswith('```'):
+                in_code_block = not in_code_block
+                _flush_paragraph()
+                continue
+
+            # Skip everything inside code blocks
+            if in_code_block:
+                continue
+
+            # Track section headings (H2/H3)
+            heading_match = re.match(r'^#{2,3}\s+(.+)$', stripped)
+            if heading_match:
+                _flush_paragraph()
+                current_section = heading_match.group(1).strip()
+                continue
+
+            # Skip H1 headings
+            if re.match(r'^#\s+', stripped):
+                _flush_paragraph()
+                continue
+
+            # Skip image embeds
+            if stripped.startswith('![[') or stripped.startswith('!['):
+                _flush_paragraph()
+                continue
+
+            # Skip Tags: line
+            if re.match(r'^Tags?:\s', stripped, re.IGNORECASE):
+                _flush_paragraph()
+                continue
+
+            # Skip blank lines (paragraph boundary)
+            if not stripped:
+                _flush_paragraph()
+                continue
+
+            # Skip lines that look like horizontal rules
+            if re.match(r'^[-=*]{3,}\s*$', stripped):
+                _flush_paragraph()
+                continue
+
+            # Accumulate prose lines
+            paragraph_lines.append(stripped)
+
+        # Flush remaining
+        _flush_paragraph()
+
+        return chunks
+
     def parse_file(
         self,
         filepath: str,
         full_scan: bool = False,
         source_dir: Optional[str] = None
-    ) -> tuple[Writeup, list[ExtractedCommand], list[Script]]:
+    ) -> tuple[Writeup, list[ExtractedCommand], list[Script], list[dict]]:
         """
         Parse a writeup file completely.
 
@@ -777,7 +863,7 @@ class WriteupParser:
             source_dir: Source directory type ('unified' for WRITEUPS env var, None for legacy)
 
         Returns:
-            Tuple of (Writeup, list of commands, list of scripts)
+            Tuple of (Writeup, list of commands, list of scripts, list of prose chunks)
         """
         path = Path(filepath)
         content = path.read_text(encoding='utf-8', errors='ignore')
@@ -809,4 +895,7 @@ class WriteupParser:
                 extracted = self.extract_commands(block)
                 commands.extend(extracted)
 
-        return writeup, commands, scripts
+        # Extract prose chunks
+        chunks = self.extract_prose_chunks(content)
+
+        return writeup, commands, scripts, chunks

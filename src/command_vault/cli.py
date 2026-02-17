@@ -57,6 +57,7 @@ Examples:
   vault search "bloodhound enumerate"
   vault search --tool nmap --category recon
   vault search --tag windows --tag ad   # Filter by tags
+  vault prose "NTLM relay"            # Search writeup prose
   vault suggest "crack NTLM hash"
   vault tools --category ad
   vault tags                            # List all tags
@@ -125,6 +126,15 @@ Environment Variables:
     tags_parser = subparsers.add_parser('tags', help='List all tags')
     tags_parser.add_argument('--min-count', '-m', type=int, default=1,
                              help='Minimum writeup count to include a tag')
+
+    # Prose command
+    prose_parser = subparsers.add_parser('prose', help='Search writeup prose/methodology')
+    prose_parser.add_argument('query', help='Search query (e.g., "NTLM relay")')
+    prose_parser.add_argument('--type', '-T', choices=['box', 'challenge', 'sherlock'],
+                               help='Filter by writeup type')
+    prose_parser.add_argument('--tag', '-g', action='append', dest='tags',
+                               help='Filter by tag (repeatable)')
+    prose_parser.add_argument('--limit', '-n', type=int, default=10, help='Max results')
 
     # Index command
     index_parser = subparsers.add_parser('index', help='Index writeups')
@@ -223,6 +233,14 @@ Environment Variables:
 
     elif args.command == 'tags':
         result = vault.list_tags(min_count=args.min_count)
+
+    elif args.command == 'prose':
+        result = vault.search_writeup_prose(
+            query=args.query,
+            writeup_type=args.type,
+            tags=args.tags,
+            limit=args.limit
+        )
 
     elif args.command == 'index':
         directories = args.directories if args.directories else None
@@ -326,6 +344,18 @@ def format_output(command: str, result):
         print("-" * 45)
         for item in result:
             print(f"{item['name']:<20} {item['tool_count']:<10} {item['command_count']}")
+
+    elif command == 'prose':
+        for item in result:
+            filename = item['source'].get('filename', '')
+            section = item.get('section', '')
+            content = item['content']
+            # Truncate to ~300 chars
+            if len(content) > 300:
+                content = content[:300] + '...'
+            print(f"\n{'='*60}")
+            print(f"Source: {filename} [{section}]")
+            print(f"\n  {content}")
 
     elif command == 'tags':
         print(f"{'Tag':<25} {'Writeups':<12} {'Commands'}")

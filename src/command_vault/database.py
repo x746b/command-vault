@@ -1,5 +1,6 @@
 """SQLite database operations for Command Vault."""
 
+import re
 import sqlite3
 import json
 import logging
@@ -9,7 +10,7 @@ from contextlib import contextmanager
 
 from .models import (
     Writeup, Tool, Command, Script,
-    CommandResult, ScriptResult, ToolInfo, CategoryInfo, VaultStats,
+    CommandResult, ScriptResult, ChunkResult, ToolInfo, CategoryInfo, VaultStats,
     WriteupType
 )
 from .categories import get_tool_category, get_category_description, CATEGORIES
@@ -27,7 +28,7 @@ def _build_fts_query(query: str) -> str:
     FTS5 special characters are stripped to prevent syntax errors.
     """
     # Strip FTS5 operators/special chars that could cause syntax errors
-    cleaned = query.replace('"', ' ').replace("'", ' ')
+    cleaned = re.sub(r'["\'\*\(\)\{\}\^\\\x00]', ' ', query)
     tokens = cleaned.split()
     if not tokens:
         return '""'
@@ -136,6 +137,16 @@ CREATE TABLE IF NOT EXISTS history_commands (
     FOREIGN KEY (tool_id) REFERENCES tools(id)
 );
 
+-- Writeup prose chunks
+CREATE TABLE IF NOT EXISTS writeup_chunks (
+    id INTEGER PRIMARY KEY,
+    writeup_id INTEGER NOT NULL,
+    section TEXT,
+    content TEXT NOT NULL,
+    chunk_index INTEGER NOT NULL,
+    FOREIGN KEY (writeup_id) REFERENCES writeups(id)
+);
+
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_commands_tool ON commands(tool_id);
 CREATE INDEX IF NOT EXISTS idx_commands_writeup ON commands(writeup_id);
@@ -145,6 +156,7 @@ CREATE INDEX IF NOT EXISTS idx_writeups_challenge_type ON writeups(challenge_typ
 CREATE INDEX IF NOT EXISTS idx_tools_category ON tools(category_id);
 CREATE INDEX IF NOT EXISTS idx_history_hash ON history_commands(command_hash);
 CREATE INDEX IF NOT EXISTS idx_history_tool ON history_commands(tool_id);
+CREATE INDEX IF NOT EXISTS idx_chunks_writeup ON writeup_chunks(writeup_id);
 """
 
 FTS_SCHEMA = """
@@ -198,6 +210,29 @@ CREATE TRIGGER IF NOT EXISTS scripts_au AFTER UPDATE ON scripts BEGIN
     VALUES('delete', old.id, old.code, old.purpose);
     INSERT INTO scripts_fts(rowid, code, purpose)
     VALUES (new.id, new.code, new.purpose);
+END;
+
+-- Full-text search for writeup chunks
+CREATE VIRTUAL TABLE IF NOT EXISTS writeup_chunks_fts USING fts5(
+    content, section,
+    content='writeup_chunks', content_rowid='id'
+);
+
+CREATE TRIGGER IF NOT EXISTS chunks_ai AFTER INSERT ON writeup_chunks BEGIN
+    INSERT INTO writeup_chunks_fts(rowid, content, section)
+    VALUES (new.id, new.content, new.section);
+END;
+
+CREATE TRIGGER IF NOT EXISTS chunks_ad AFTER DELETE ON writeup_chunks BEGIN
+    INSERT INTO writeup_chunks_fts(writeup_chunks_fts, rowid, content, section)
+    VALUES('delete', old.id, old.content, old.section);
+END;
+
+CREATE TRIGGER IF NOT EXISTS chunks_au AFTER UPDATE ON writeup_chunks BEGIN
+    INSERT INTO writeup_chunks_fts(writeup_chunks_fts, rowid, content, section)
+    VALUES('delete', old.id, old.content, old.section);
+    INSERT INTO writeup_chunks_fts(rowid, content, section)
+    VALUES (new.id, new.content, new.section);
 END;
 
 -- Full-text search for history commands
@@ -269,16 +304,19 @@ class Database:
             conn.execute("DROP TABLE IF EXISTS commands_fts")
             conn.execute("DROP TABLE IF EXISTS scripts_fts")
             conn.execute("DROP TABLE IF EXISTS history_fts")
+            conn.execute("DROP TABLE IF EXISTS writeup_chunks_fts")
 
             # Drop triggers
             for trigger in ['commands_ai', 'commands_ad', 'commands_au',
                            'scripts_ai', 'scripts_ad', 'scripts_au',
-                           'history_ai', 'history_ad', 'history_au']:
+                           'history_ai', 'history_ad', 'history_au',
+                           'chunks_ai', 'chunks_ad', 'chunks_au']:
                 conn.execute(f"DROP TRIGGER IF EXISTS {trigger}")
 
             # Drop main tables
             for table in ['command_tags', 'writeup_tags', 'commands', 'scripts',
-                         'writeups', 'tools', 'tags', 'categories', 'history_commands']:
+                         'writeup_chunks', 'writeups', 'tools', 'tags',
+                         'categories', 'history_commands']:
                 conn.execute(f"DROP TABLE IF EXISTS {table}")
             conn.commit()
 
@@ -462,8 +500,9 @@ class Database:
 
             # Tool filter
             if tool:
-                where_clauses.append("t.name LIKE ?")
-                params.append(f"%{tool}%")
+                where_clauses.append("t.name LIKE ? ESCAPE '\\'")
+                escaped_tool = tool.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+                params.append(f"%{escaped_tool}%")
 
             # Category filter
             if category:
@@ -583,8 +622,9 @@ class Database:
 
             # Library filter (search in JSON array)
             if library:
-                where_clauses.append("s.libraries_used LIKE ?")
-                params.append(f'%"{library}"%')
+                where_clauses.append("s.libraries_used LIKE ? ESCAPE '\\'")
+                escaped_lib = library.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+                params.append(f'%"{escaped_lib}"%')
 
             # Challenge type filter
             if challenge_type:
@@ -789,6 +829,15 @@ class Database:
                 LIMIT 10
             """, excluded_tools).fetchall()]
 
+            # Chunk counts
+            chunk_stats = None
+            try:
+                chunk_total = conn.execute("SELECT COUNT(*) FROM writeup_chunks").fetchone()[0]
+                if chunk_total > 0:
+                    chunk_stats = {'total': chunk_total}
+            except Exception:
+                pass
+
             # History stats
             history_stats = None
             try:
@@ -829,15 +878,91 @@ class Database:
                 commands={'total': cmd_total, 'by_category': cmd_by_cat},
                 scripts={'total': script_total, 'by_language': script_by_lang},
                 tools={'total': tool_total, 'top_10': top_tools},
+                chunks=chunk_stats,
                 history=history_stats
             )
 
     def clear_writeup_data(self, writeup_id: int):
-        """Clear commands and scripts for a writeup (for re-indexing)."""
+        """Clear commands, scripts, and chunks for a writeup (for re-indexing)."""
         with self._get_connection() as conn:
             conn.execute("DELETE FROM commands WHERE writeup_id = ?", (writeup_id,))
             conn.execute("DELETE FROM scripts WHERE writeup_id = ?", (writeup_id,))
+            conn.execute("DELETE FROM writeup_chunks WHERE writeup_id = ?", (writeup_id,))
             conn.commit()
+
+    # =========================================================================
+    # CHUNK OPERATIONS
+    # =========================================================================
+
+    def insert_chunk(self, writeup_id: int, section: str, content: str, chunk_index: int) -> int:
+        """Insert a prose chunk and return its ID."""
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                """INSERT INTO writeup_chunks (writeup_id, section, content, chunk_index)
+                   VALUES (?, ?, ?, ?)""",
+                (writeup_id, section, content, chunk_index)
+            )
+            conn.commit()
+            return cursor.lastrowid
+
+    def search_chunks(
+        self,
+        query: str,
+        writeup_type: Optional[str] = None,
+        tags: Optional[list[str]] = None,
+        limit: int = 10
+    ) -> list[ChunkResult]:
+        """Search prose chunks via FTS."""
+        with self._get_connection() as conn:
+            params = []
+
+            base_query = """
+                SELECT ch.id, ch.section, ch.content,
+                       w.filename, w.writeup_type, w.title
+                FROM writeup_chunks_fts fts
+                JOIN writeup_chunks ch ON fts.rowid = ch.id
+                LEFT JOIN writeups w ON ch.writeup_id = w.id
+                WHERE writeup_chunks_fts MATCH ?
+            """
+            params.append(_build_fts_query(query))
+
+            if writeup_type:
+                base_query += " AND w.writeup_type = ?"
+                params.append(writeup_type)
+
+            if tags:
+                tag_list = [t.lower() for t in tags]
+                placeholders = ','.join('?' * len(tag_list))
+                base_query += f"""
+                    AND w.id IN (
+                        SELECT wt.writeup_id FROM writeup_tags wt
+                        JOIN tags tg ON wt.tag_id = tg.id
+                        WHERE LOWER(tg.name) IN ({placeholders})
+                        GROUP BY wt.writeup_id
+                        HAVING COUNT(DISTINCT tg.id) = ?
+                    )
+                """
+                params.extend(tag_list)
+                params.append(len(tag_list))
+
+            base_query += " LIMIT ?"
+            params.append(int(limit))
+
+            rows = conn.execute(base_query, params).fetchall()
+
+            return [
+                ChunkResult(
+                    id=row['id'],
+                    section=row['section'],
+                    content=row['content'],
+                    source={
+                        'filename': row['filename'],
+                        'writeup_type': row['writeup_type'],
+                        'title': row['title']
+                    }
+                )
+                for row in rows
+            ]
 
     def get_indexed_filenames(self) -> set[str]:
         """Get set of all indexed writeup filenames."""
@@ -943,8 +1068,9 @@ class Database:
 
             # Tool filter
             if tool:
-                where_clauses.append("t.name LIKE ?")
-                params.append(f"%{tool}%")
+                where_clauses.append("t.name LIKE ? ESCAPE '\\'")
+                escaped_tool = tool.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+                params.append(f"%{escaped_tool}%")
 
             # Date filter
             if since:
@@ -1116,7 +1242,7 @@ class Database:
             # Optimize FTS indexes
             if optimize_fts:
                 try:
-                    fts_tables = ['commands_fts', 'scripts_fts', 'history_fts']
+                    fts_tables = ['commands_fts', 'scripts_fts', 'writeup_chunks_fts', 'history_fts']
                     optimized = []
                     for table in fts_tables:
                         try:

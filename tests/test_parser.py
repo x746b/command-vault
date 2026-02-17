@@ -256,6 +256,126 @@ This has sherlock tag but is in boxes directory.
         assert result['type'] == WriteupType.BOX  # From path, not content
 
 
+class TestProseExtraction:
+    """Tests for extract_prose_chunks()."""
+
+    def test_extracts_paragraphs(self, parser):
+        """Should extract prose paragraphs from markdown."""
+        content = '''# Authority
+
+## Enumeration
+
+We start by running a port scan against the target machine to identify open services.
+
+```bash
+$ nmap -sC -sV 10.10.11.222
+```
+
+The scan reveals several interesting ports including LDAP and SMB.
+
+## Foothold
+
+After examining the LDAP service, we find that anonymous binds are allowed which gives us access to the directory.
+'''
+        chunks = parser.extract_prose_chunks(content)
+        assert len(chunks) >= 3
+        # First chunk should be about port scan
+        assert any('port scan' in c['content'].lower() for c in chunks)
+        # Should track sections
+        assert any(c['section'] == 'Enumeration' for c in chunks)
+        assert any(c['section'] == 'Foothold' for c in chunks)
+
+    def test_skips_code_blocks(self, parser):
+        """Should not include code block contents as prose."""
+        content = '''## Test
+
+Some prose before code.
+
+```python
+import requests
+r = requests.get('http://target')
+print(r.text)
+```
+
+Some prose after code.
+'''
+        chunks = parser.extract_prose_chunks(content)
+        # Should not contain python code
+        for c in chunks:
+            assert 'import requests' not in c['content']
+            assert 'requests.get' not in c['content']
+
+    def test_skips_short_fragments(self, parser):
+        """Should skip fragments shorter than 30 chars."""
+        content = '''## Test
+
+Let's check:
+
+This is a much longer paragraph that should definitely be included in the chunks output.
+'''
+        chunks = parser.extract_prose_chunks(content)
+        # "Let's check:" is too short
+        for c in chunks:
+            assert c['content'] != "Let's check:"
+        # The longer paragraph should be there
+        assert any('longer paragraph' in c['content'] for c in chunks)
+
+    def test_skips_image_embeds(self, parser):
+        """Should skip image embed lines."""
+        content = '''## Test
+
+This paragraph discusses the network architecture in detail for our analysis.
+
+![[network-diagram.png]]
+
+Another paragraph after the image that discusses findings from the analysis.
+'''
+        chunks = parser.extract_prose_chunks(content)
+        for c in chunks:
+            assert '![[' not in c['content']
+
+    def test_skips_tags_line(self, parser):
+        """Should skip Tags: header line."""
+        content = '''# Box
+
+Tags: #windows #ad #easy
+
+This is the actual writeup content that should be extracted as a chunk.
+'''
+        chunks = parser.extract_prose_chunks(content)
+        for c in chunks:
+            assert not c['content'].startswith('Tags:')
+
+    def test_chunk_index_sequential(self, parser):
+        """Chunk indexes should be sequential starting from 0."""
+        content = '''## Section One
+
+First paragraph of significant length for testing chunk extraction.
+
+Second paragraph of significant length for testing chunk extraction.
+
+## Section Two
+
+Third paragraph of significant length for testing chunk extraction.
+'''
+        chunks = parser.extract_prose_chunks(content)
+        indexes = [c['chunk_index'] for c in chunks]
+        assert indexes == list(range(len(chunks)))
+
+    def test_merges_consecutive_lines(self, parser):
+        """Consecutive non-blank lines should merge into one paragraph."""
+        content = '''## Test
+
+This is line one of a paragraph
+that continues on line two
+and finishes on line three.
+'''
+        chunks = parser.extract_prose_chunks(content)
+        assert len(chunks) == 1
+        assert 'line one' in chunks[0]['content']
+        assert 'line three' in chunks[0]['content']
+
+
 class TestWriteupParsing:
     """Tests for full writeup parsing with tags."""
 

@@ -50,6 +50,7 @@ class Indexer:
         files_skipped = 0
         commands_extracted = 0
         scripts_extracted = 0
+        chunks_extracted = 0
 
         path = Path(directory)
         if not path.exists():
@@ -83,6 +84,7 @@ class Indexer:
                 files_processed += 1
                 commands_extracted += result['commands']
                 scripts_extracted += result['scripts']
+                chunks_extracted += result['chunks']
 
                 if files_processed % 50 == 0:
                     logger.info(f"Processed {files_processed} files...")
@@ -99,14 +101,15 @@ class Indexer:
 
         logger.info(
             f"Indexing complete: {files_processed} files, "
-            f"{commands_extracted} commands, {scripts_extracted} scripts "
-            f"in {duration:.2f}s"
+            f"{commands_extracted} commands, {scripts_extracted} scripts, "
+            f"{chunks_extracted} chunks in {duration:.2f}s"
         )
 
         return IndexResult(
             files_processed=files_processed,
             commands_extracted=commands_extracted,
             scripts_extracted=scripts_extracted,
+            chunks_extracted=chunks_extracted,
             errors=errors,
             duration_seconds=duration
         )
@@ -126,12 +129,12 @@ class Indexer:
             source_dir: Directory type ('unified', 'boxes', 'challenges', 'sherlocks')
 
         Returns:
-            Dict with counts: {commands, scripts}
+            Dict with counts: {commands, scripts, chunks}
         """
         # Parse the file with appropriate settings based on source_dir
         # 'unified' dir enables full content scanning and content-based type detection
         full_scan = (source_dir == 'unified')
-        writeup, commands, scripts = self.parser.parse_file(
+        writeup, commands, scripts, chunks = self.parser.parse_file(
             filepath,
             full_scan=full_scan,
             source_dir=source_dir
@@ -176,9 +179,21 @@ class Indexer:
             self.db.insert_script(script)
             script_count += 1
 
+        # Insert chunks
+        chunk_count = 0
+        for chunk in chunks:
+            self.db.insert_chunk(
+                writeup_id=writeup_id,
+                section=chunk['section'],
+                content=chunk['content'],
+                chunk_index=chunk['chunk_index']
+            )
+            chunk_count += 1
+
         return {
             'commands': command_count,
-            'scripts': script_count
+            'scripts': script_count,
+            'chunks': chunk_count
         }
 
     def index_all(
@@ -228,6 +243,7 @@ class Indexer:
             total_result.files_processed += result.files_processed
             total_result.commands_extracted += result.commands_extracted
             total_result.scripts_extracted += result.scripts_extracted
+            total_result.chunks_extracted += result.chunks_extracted
             total_result.errors.extend(result.errors)
 
         total_result.duration_seconds = time.time() - start_time

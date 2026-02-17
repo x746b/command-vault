@@ -290,6 +290,36 @@ async def list_tools() -> list[Tool]:
                 "required": ["filename"]
             }
         ),
+        Tool(
+            name="search_writeup_prose",
+            description="Search writeup prose for methodology, analysis, and attack chain reasoning. "
+                       "Examples: 'NTLM relay LDAP', 'ADCS ESC8', 'Kerberoasting', 'log analysis'",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Free-text search query for prose content"
+                    },
+                    "writeup_type": {
+                        "type": "string",
+                        "enum": ["box", "challenge", "sherlock"],
+                        "description": "Filter by writeup source type"
+                    },
+                    "tags": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Filter by tags (e.g., ['windows', 'ad']). All tags must match."
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "default": 10,
+                        "description": "Maximum results to return"
+                    }
+                },
+                "required": ["query"]
+            }
+        ),
         # History tools
         Tool(
             name="index_history",
@@ -446,6 +476,14 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
         elif name == "get_writeup_summary":
             result = vault_tools.get_writeup_summary(
                 filename=arguments["filename"]
+            )
+
+        elif name == "search_writeup_prose":
+            result = vault_tools.search_writeup_prose(
+                query=arguments["query"],
+                writeup_type=arguments.get("writeup_type"),
+                tags=arguments.get("tags"),
+                limit=arguments.get("limit", 10)
             )
 
         # History tools
