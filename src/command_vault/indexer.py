@@ -143,9 +143,8 @@ class Indexer:
         # Insert or update writeup
         writeup_id = self.db.insert_writeup(writeup)
 
-        # Clear existing data if rebuilding
-        if force_rebuild:
-            self.db.clear_writeup_data(writeup_id)
+        # Always clear existing data to prevent duplicates on re-index
+        self.db.clear_writeup_data(writeup_id)
 
         # Insert commands
         command_count = 0
