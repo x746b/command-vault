@@ -20,9 +20,10 @@ logger = logging.getLogger(__name__)
 def _build_fts_query(query: str) -> str:
     """Build an FTS5 query from user input.
 
-    Tokenizes input and joins with OR so multi-word queries like
-    "certipy ESC" match documents containing either word, not just
-    the exact phrase.  Single-word queries pass through unchanged.
+    Tokenizes input and joins with AND so multi-word queries like
+    "certipy ESC" match documents containing ALL words (anywhere in
+    the text), not just the exact phrase.  Single-word queries pass
+    through unchanged.
     FTS5 special characters are stripped to prevent syntax errors.
     """
     # Strip FTS5 operators/special chars that could cause syntax errors
@@ -31,10 +32,9 @@ def _build_fts_query(query: str) -> str:
     if not tokens:
         return '""'
     if len(tokens) == 1:
-        # Single word: quote it for safe literal match
         return '"' + tokens[0] + '"'
-    # Multi-word: each token quoted, joined with OR
-    return ' OR '.join('"' + t + '"' for t in tokens)
+    # Multi-word: each token quoted, joined with AND (all words required)
+    return ' AND '.join('"' + t + '"' for t in tokens)
 
 
 SCHEMA = """

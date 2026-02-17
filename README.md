@@ -9,7 +9,7 @@ Command Vault indexes commands from your penetration testing notes, reports, and
 
 ## Features
 
-- **Full-text search** across commands and scripts from your writeups (multi-word queries use OR matching)
+- **Full-text search** across commands and scripts from your writeups (multi-word queries require ALL words)
 - **Tag-based filtering** - Search by `#hashtags` extracted from writeup content
 - **Shell history indexing** - Index `~/.zsh_history` or `~/.bash_history` with deduplication
 - **Smart categorization** - 200+ security tools mapped to categories (recon, AD, web, privesc, etc.)
@@ -105,7 +105,7 @@ vault index --add /path/to/writeups /another/path
 ```bash
 # Search by keyword (multi-word queries match any token)
 vault search "kerberoasting"
-vault search "certipy ESC"           # finds commands with "certipy" OR "ESC"
+vault search "certipy ESC"           # finds commands containing BOTH "certipy" AND "ESC"
 vault search "shadow credentials"
 
 # Search by tool
@@ -521,7 +521,7 @@ Command Vault uses different processing pipelines for writeups and shell history
 4. **Tool Identification** - Map first token to known tools (200+ security tools)
 5. **Categorization** - Assign category (recon, AD, web, privesc, etc.)
 6. **Template Generation** - Replace IPs, domains, usernames with `{IP}`, `{DOMAIN}`, `{USER}` placeholders
-7. **FTS Indexing** - Store in SQLite with full-text search on command text and purpose (OR-tokenized queries)
+7. **FTS Indexing** - Store in SQLite with full-text search on command text and purpose (AND-tokenized queries)
 
 ### Shell History Processing Pipeline
 
@@ -605,7 +605,7 @@ export PATH="$HOME/.local/bin:$PATH"
 1. Check if writeups are indexed: `vault stats`
 2. If counts are 0, run: `vault index --rebuild`
 3. Verify writeup directories exist and contain `.md` files
-4. Multi-word queries use OR matching — try simpler single-word searches to narrow down
+4. Multi-word queries require ALL words to match — use fewer words to broaden results
 
 ### MCP server not connecting
 
