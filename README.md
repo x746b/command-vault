@@ -7,9 +7,10 @@ Command Vault indexes **commands**, **scripts**, and **prose** from your penetra
 
 ## Features
 
-- **Command search** — FTS across commands extracted from writeup code blocks (multi-word AND matching)
+- **Command search** — FTS across commands with AND-first, bm25-ranked OR fallback for multi-word queries
 - **Prose search** — Search methodology text, attack explanations, and forensic analysis from writeups
 - **Script search** — Find Python, PowerShell, and Frida exploit scripts by language or library
+- **Ranked fallback** — Multi-word queries try AND (precise), then fall back to bm25-ranked OR (relevant)
 - **Shell history** — Index `~/.zsh_history` or `~/.bash_history` with deduplication and security redaction
 - **Tag filtering** — Search by `#hashtags` extracted from writeup content
 - **Smart categorization** — 200+ security tools mapped to categories (recon, AD, web, privesc, etc.)
@@ -50,7 +51,8 @@ vault prose "ADCS ESC8" --type box
 ### Commands & Scripts
 
 ```bash
-vault search "certipy ESC"              # Multi-word AND search
+vault search "certipy ESC"              # AND match (both words required)
+vault search "buffer overflow ROP chain" # AND first, bm25 OR fallback if no AND hits
 vault search --tool bloodyAD --limit 5   # Filter by tool
 vault search --category ad               # Filter by category
 vault search --tag windows --tag ad      # Filter by tags (AND logic)
@@ -71,6 +73,7 @@ Search the full text of writeup methodology, not just extracted commands:
 vault prose "NTLM relay"                # Search writeup prose
 vault prose "ADCS ESC8" --type box      # Filter by writeup type
 vault prose "shadow credentials" --limit 20
+vault prose "GenericWrite ADCS shadow"  # AND first, ranked OR fallback
 ```
 
 ### Indexing
@@ -196,7 +199,7 @@ Tags (`#box`, `#windows`, `#ad`, `#easy`) are extracted and searchable. Prose pa
 ## Troubleshooting
 
 - **"vault: command not found"** — Run via `uv run vault` from the project directory, or add `~/.local/bin` to PATH after `pip install -e .`
-- **"No results found"** — Check `vault stats`, run `vault index --rebuild` if counts are 0. Multi-word queries require ALL words.
+- **"No results found"** — Check `vault stats`, run `vault index --rebuild` if counts are 0. Multi-word queries try AND first, then fall back to bm25-ranked OR if AND returns nothing.
 - **MCP not connecting** — Verify paths in MCP config, check `uv` is in PATH, test with `uv run command-vault`
 - **Database errors** — Run `vault maintain --all`. If that fails: `rm ~/.local/share/command-vault/vault.db && vault index --rebuild`
 

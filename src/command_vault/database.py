@@ -18,8 +18,14 @@ from .categories import get_tool_category, get_category_description, CATEGORIES
 logger = logging.getLogger(__name__)
 
 
+def _tokenize_fts(query: str) -> list[str]:
+    """Clean and tokenize a query string for FTS5."""
+    cleaned = re.sub(r'["\'\*\(\)\{\}\^\\\x00]', ' ', query)
+    return cleaned.split()
+
+
 def _build_fts_query(query: str) -> str:
-    """Build an FTS5 query from user input.
+    """Build an FTS5 AND query from user input.
 
     Tokenizes input and joins with AND so multi-word queries like
     "certipy ESC" match documents containing ALL words (anywhere in
@@ -27,15 +33,27 @@ def _build_fts_query(query: str) -> str:
     through unchanged.
     FTS5 special characters are stripped to prevent syntax errors.
     """
-    # Strip FTS5 operators/special chars that could cause syntax errors
-    cleaned = re.sub(r'["\'\*\(\)\{\}\^\\\x00]', ' ', query)
-    tokens = cleaned.split()
+    tokens = _tokenize_fts(query)
     if not tokens:
         return '""'
     if len(tokens) == 1:
         return '"' + tokens[0] + '"'
     # Multi-word: each token quoted, joined with AND (all words required)
     return ' AND '.join('"' + t + '"' for t in tokens)
+
+
+def _build_fts_query_or(query: str) -> str:
+    """Build an FTS5 OR query for fallback/ranked search.
+
+    Used when AND returns no results — OR matches any word,
+    relies on bm25() ranking to surface relevant results.
+    """
+    tokens = _tokenize_fts(query)
+    if not tokens:
+        return '""'
+    if len(tokens) == 1:
+        return '"' + tokens[0] + '"'
+    return ' OR '.join('"' + t + '"' for t in tokens)
 
 
 SCHEMA = """
@@ -468,88 +486,89 @@ class Database:
         tags: Optional[list[str]] = None,
         limit: int = 10
     ) -> list[CommandResult]:
-        """Search commands with various filters."""
+        """Search commands with AND-first, ranked-OR-fallback for FTS."""
         with self._get_connection() as conn:
-            params = []
-            where_clauses = []
+            def _build_cmd_query(fts_query: Optional[str], rank: bool = False):
+                params = []
+                where_clauses = []
 
-            base_query = """
-                SELECT c.id, c.raw_command, c.command_template, c.purpose,
-                       c.source_section, t.name as tool_name, cat.name as category,
-                       w.filename, w.writeup_type, w.challenge_type
-                FROM commands c
-                LEFT JOIN tools t ON c.tool_id = t.id
-                LEFT JOIN categories cat ON t.category_id = cat.id
-                LEFT JOIN writeups w ON c.writeup_id = w.id
-            """
-
-            # FTS search
-            if query:
-                base_query = """
-                    SELECT c.id, c.raw_command, c.command_template, c.purpose,
-                           c.source_section, t.name as tool_name, cat.name as category,
-                           w.filename, w.writeup_type, w.challenge_type
-                    FROM commands_fts fts
-                    JOIN commands c ON fts.rowid = c.id
-                    LEFT JOIN tools t ON c.tool_id = t.id
-                    LEFT JOIN categories cat ON t.category_id = cat.id
-                    LEFT JOIN writeups w ON c.writeup_id = w.id
-                    WHERE commands_fts MATCH ?
-                """
-                params.append(_build_fts_query(query))
-
-            # Tool filter
-            if tool:
-                where_clauses.append("t.name LIKE ? ESCAPE '\\'")
-                escaped_tool = tool.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
-                params.append(f"%{escaped_tool}%")
-
-            # Category filter
-            if category:
-                where_clauses.append("cat.name = ?")
-                params.append(category)
-
-            # Writeup type filter
-            if writeup_type:
-                where_clauses.append("w.writeup_type = ?")
-                params.append(writeup_type)
-
-            # Challenge type filter
-            if challenge_type:
-                where_clauses.append("w.challenge_type = ?")
-                params.append(challenge_type)
-
-            # Tag filter - filter by writeup tags (AND logic: all tags must match)
-            if tags:
-                tag_list = [t.lower() for t in tags]
-                placeholders = ','.join('?' * len(tag_list))
-                where_clauses.append(f"""
-                    w.id IN (
-                        SELECT wt.writeup_id FROM writeup_tags wt
-                        JOIN tags tg ON wt.tag_id = tg.id
-                        WHERE LOWER(tg.name) IN ({placeholders})
-                        GROUP BY wt.writeup_id
-                        HAVING COUNT(DISTINCT tg.id) = ?
-                    )
-                """)
-                params.extend(tag_list)
-                params.append(len(tag_list))
-
-            # Build final query
-            if where_clauses:
-                if query:
-                    base_query += " AND " + " AND ".join(where_clauses)
+                if fts_query:
+                    base_query = """
+                        SELECT c.id, c.raw_command, c.command_template, c.purpose,
+                               c.source_section, t.name as tool_name, cat.name as category,
+                               w.filename, w.writeup_type, w.challenge_type
+                        FROM commands_fts fts
+                        JOIN commands c ON fts.rowid = c.id
+                        LEFT JOIN tools t ON c.tool_id = t.id
+                        LEFT JOIN categories cat ON t.category_id = cat.id
+                        LEFT JOIN writeups w ON c.writeup_id = w.id
+                        WHERE commands_fts MATCH ?
+                    """
+                    params.append(fts_query)
                 else:
-                    base_query += " WHERE " + " AND ".join(where_clauses)
+                    base_query = """
+                        SELECT c.id, c.raw_command, c.command_template, c.purpose,
+                               c.source_section, t.name as tool_name, cat.name as category,
+                               w.filename, w.writeup_type, w.challenge_type
+                        FROM commands c
+                        LEFT JOIN tools t ON c.tool_id = t.id
+                        LEFT JOIN categories cat ON t.category_id = cat.id
+                        LEFT JOIN writeups w ON c.writeup_id = w.id
+                    """
 
-            base_query += " LIMIT ?"
-            params.append(int(limit))
+                if tool:
+                    where_clauses.append("t.name LIKE ? ESCAPE '\\'")
+                    escaped_tool = tool.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+                    params.append(f"%{escaped_tool}%")
+                if category:
+                    where_clauses.append("cat.name = ?")
+                    params.append(category)
+                if writeup_type:
+                    where_clauses.append("w.writeup_type = ?")
+                    params.append(writeup_type)
+                if challenge_type:
+                    where_clauses.append("w.challenge_type = ?")
+                    params.append(challenge_type)
+                if tags:
+                    tag_list = [t.lower() for t in tags]
+                    placeholders = ','.join('?' * len(tag_list))
+                    where_clauses.append(f"""
+                        w.id IN (
+                            SELECT wt.writeup_id FROM writeup_tags wt
+                            JOIN tags tg ON wt.tag_id = tg.id
+                            WHERE LOWER(tg.name) IN ({placeholders})
+                            GROUP BY wt.writeup_id
+                            HAVING COUNT(DISTINCT tg.id) = ?
+                        )
+                    """)
+                    params.extend(tag_list)
+                    params.append(len(tag_list))
 
-            rows = conn.execute(base_query, params).fetchall()
+                if where_clauses:
+                    joiner = " AND " if fts_query else " WHERE "
+                    base_query += joiner + " AND ".join(where_clauses)
 
-            results = []
-            for row in rows:
-                results.append(CommandResult(
+                if rank:
+                    base_query += " ORDER BY bm25(commands_fts)"
+                base_query += " LIMIT ?"
+                params.append(int(limit))
+                return base_query, params
+
+            # Try AND first (precise)
+            and_q, and_p = _build_cmd_query(
+                _build_fts_query(query) if query else None
+            )
+            rows = conn.execute(and_q, and_p).fetchall()
+
+            # Fallback to ranked OR if AND returned nothing and query is multi-word
+            if not rows and query and len(_tokenize_fts(query)) > 1:
+                or_q, or_p = _build_cmd_query(
+                    _build_fts_query_or(query), rank=True
+                )
+                rows = conn.execute(or_q, or_p).fetchall()
+
+            return [
+                CommandResult(
                     id=row['id'],
                     tool=row['tool_name'],
                     raw_command=row['raw_command'],
@@ -561,9 +580,9 @@ class Database:
                         'section': row['source_section'],
                         'challenge_type': row['challenge_type']
                     }
-                ))
-
-            return results
+                )
+                for row in rows
+            ]
 
     # =========================================================================
     # SCRIPT OPERATIONS
@@ -591,57 +610,63 @@ class Database:
         challenge_type: Optional[str] = None,
         limit: int = 10
     ) -> list[ScriptResult]:
-        """Search scripts with various filters."""
+        """Search scripts with AND-first, ranked-OR-fallback for FTS."""
         with self._get_connection() as conn:
-            params = []
-            where_clauses = []
+            def _build_script_query(fts_query: Optional[str], rank: bool = False):
+                params = []
+                where_clauses = []
 
-            base_query = """
-                SELECT s.id, s.language, s.code, s.purpose, s.libraries_used,
-                       w.filename, w.writeup_type, w.challenge_type
-                FROM scripts s
-                LEFT JOIN writeups w ON s.writeup_id = w.id
-            """
-
-            # FTS search
-            if query:
-                base_query = """
-                    SELECT s.id, s.language, s.code, s.purpose, s.libraries_used,
-                           w.filename, w.writeup_type, w.challenge_type
-                    FROM scripts_fts fts
-                    JOIN scripts s ON fts.rowid = s.id
-                    LEFT JOIN writeups w ON s.writeup_id = w.id
-                    WHERE scripts_fts MATCH ?
-                """
-                params.append(_build_fts_query(query))
-
-            # Language filter
-            if language:
-                where_clauses.append("s.language = ?")
-                params.append(language)
-
-            # Library filter (search in JSON array)
-            if library:
-                where_clauses.append("s.libraries_used LIKE ? ESCAPE '\\'")
-                escaped_lib = library.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
-                params.append(f'%"{escaped_lib}"%')
-
-            # Challenge type filter
-            if challenge_type:
-                where_clauses.append("w.challenge_type = ?")
-                params.append(challenge_type)
-
-            # Build final query
-            if where_clauses:
-                if query:
-                    base_query += " AND " + " AND ".join(where_clauses)
+                if fts_query:
+                    base_query = """
+                        SELECT s.id, s.language, s.code, s.purpose, s.libraries_used,
+                               w.filename, w.writeup_type, w.challenge_type
+                        FROM scripts_fts fts
+                        JOIN scripts s ON fts.rowid = s.id
+                        LEFT JOIN writeups w ON s.writeup_id = w.id
+                        WHERE scripts_fts MATCH ?
+                    """
+                    params.append(fts_query)
                 else:
-                    base_query += " WHERE " + " AND ".join(where_clauses)
+                    base_query = """
+                        SELECT s.id, s.language, s.code, s.purpose, s.libraries_used,
+                               w.filename, w.writeup_type, w.challenge_type
+                        FROM scripts s
+                        LEFT JOIN writeups w ON s.writeup_id = w.id
+                    """
 
-            base_query += " LIMIT ?"
-            params.append(int(limit))
+                if language:
+                    where_clauses.append("s.language = ?")
+                    params.append(language)
+                if library:
+                    where_clauses.append("s.libraries_used LIKE ? ESCAPE '\\'")
+                    escaped_lib = library.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+                    params.append(f'%"{escaped_lib}"%')
+                if challenge_type:
+                    where_clauses.append("w.challenge_type = ?")
+                    params.append(challenge_type)
 
-            rows = conn.execute(base_query, params).fetchall()
+                if where_clauses:
+                    joiner = " AND " if fts_query else " WHERE "
+                    base_query += joiner + " AND ".join(where_clauses)
+
+                if rank:
+                    base_query += " ORDER BY bm25(scripts_fts)"
+                base_query += " LIMIT ?"
+                params.append(int(limit))
+                return base_query, params
+
+            # Try AND first (precise)
+            and_q, and_p = _build_script_query(
+                _build_fts_query(query) if query else None
+            )
+            rows = conn.execute(and_q, and_p).fetchall()
+
+            # Fallback to ranked OR if AND returned nothing and query is multi-word
+            if not rows and query and len(_tokenize_fts(query)) > 1:
+                or_q, or_p = _build_script_query(
+                    _build_fts_query_or(query), rank=True
+                )
+                rows = conn.execute(or_q, or_p).fetchall()
 
             results = []
             for row in rows:
@@ -912,43 +937,60 @@ class Database:
         tags: Optional[list[str]] = None,
         limit: int = 10
     ) -> list[ChunkResult]:
-        """Search prose chunks via FTS."""
+        """Search prose chunks via FTS with AND-first, ranked-OR-fallback.
+
+        Multi-word queries try AND first (all words required).
+        If AND returns no results, falls back to OR with bm25() ranking
+        so the most relevant matches surface to the top.
+        """
         with self._get_connection() as conn:
-            params = []
-
-            base_query = """
-                SELECT ch.id, ch.section, ch.content,
-                       w.filename, w.writeup_type, w.title
-                FROM writeup_chunks_fts fts
-                JOIN writeup_chunks ch ON fts.rowid = ch.id
-                LEFT JOIN writeups w ON ch.writeup_id = w.id
-                WHERE writeup_chunks_fts MATCH ?
-            """
-            params.append(_build_fts_query(query))
-
-            if writeup_type:
-                base_query += " AND w.writeup_type = ?"
-                params.append(writeup_type)
-
-            if tags:
-                tag_list = [t.lower() for t in tags]
-                placeholders = ','.join('?' * len(tag_list))
-                base_query += f"""
-                    AND w.id IN (
-                        SELECT wt.writeup_id FROM writeup_tags wt
-                        JOIN tags tg ON wt.tag_id = tg.id
-                        WHERE LOWER(tg.name) IN ({placeholders})
-                        GROUP BY wt.writeup_id
-                        HAVING COUNT(DISTINCT tg.id) = ?
-                    )
+            def _build_chunk_query(fts_query: str, rank: bool = False):
+                params = []
+                base_query = """
+                    SELECT ch.id, ch.section, ch.content,
+                           w.filename, w.writeup_type, w.title
+                    FROM writeup_chunks_fts fts
+                    JOIN writeup_chunks ch ON fts.rowid = ch.id
+                    LEFT JOIN writeups w ON ch.writeup_id = w.id
+                    WHERE writeup_chunks_fts MATCH ?
                 """
-                params.extend(tag_list)
-                params.append(len(tag_list))
+                params.append(fts_query)
 
-            base_query += " LIMIT ?"
-            params.append(int(limit))
+                if writeup_type:
+                    base_query += " AND w.writeup_type = ?"
+                    params.append(writeup_type)
 
-            rows = conn.execute(base_query, params).fetchall()
+                if tags:
+                    tag_list = [t.lower() for t in tags]
+                    placeholders = ','.join('?' * len(tag_list))
+                    base_query += f"""
+                        AND w.id IN (
+                            SELECT wt.writeup_id FROM writeup_tags wt
+                            JOIN tags tg ON wt.tag_id = tg.id
+                            WHERE LOWER(tg.name) IN ({placeholders})
+                            GROUP BY wt.writeup_id
+                            HAVING COUNT(DISTINCT tg.id) = ?
+                        )
+                    """
+                    params.extend(tag_list)
+                    params.append(len(tag_list))
+
+                if rank:
+                    base_query += " ORDER BY bm25(writeup_chunks_fts)"
+                base_query += " LIMIT ?"
+                params.append(int(limit))
+                return base_query, params
+
+            # Try AND first (precise)
+            and_query, and_params = _build_chunk_query(_build_fts_query(query))
+            rows = conn.execute(and_query, and_params).fetchall()
+
+            # Fallback to ranked OR if AND returned nothing and query is multi-word
+            if not rows and len(_tokenize_fts(query)) > 1:
+                or_query, or_params = _build_chunk_query(
+                    _build_fts_query_or(query), rank=True
+                )
+                rows = conn.execute(or_query, or_params).fetchall()
 
             return [
                 ChunkResult(
@@ -1040,54 +1082,64 @@ class Database:
         since: Optional[str] = None,
         limit: int = 20
     ) -> list[dict]:
-        """Search history commands."""
+        """Search history commands with AND-first, ranked-OR-fallback for FTS."""
         with self._get_connection() as conn:
-            params = []
-            where_clauses = []
+            def _build_hist_query(fts_query: Optional[str], rank: bool = False):
+                params = []
+                where_clauses = []
 
-            base_query = """
-                SELECT h.id, h.sanitized_command, h.command_template,
-                       h.first_seen, h.last_seen, h.occurrence_count,
-                       t.name as tool_name
-                FROM history_commands h
-                LEFT JOIN tools t ON h.tool_id = t.id
-            """
-
-            # FTS search
-            if query:
-                base_query = """
-                    SELECT h.id, h.sanitized_command, h.command_template,
-                           h.first_seen, h.last_seen, h.occurrence_count,
-                           t.name as tool_name
-                    FROM history_fts fts
-                    JOIN history_commands h ON fts.rowid = h.id
-                    LEFT JOIN tools t ON h.tool_id = t.id
-                    WHERE history_fts MATCH ?
-                """
-                params.append(_build_fts_query(query))
-
-            # Tool filter
-            if tool:
-                where_clauses.append("t.name LIKE ? ESCAPE '\\'")
-                escaped_tool = tool.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
-                params.append(f"%{escaped_tool}%")
-
-            # Date filter
-            if since:
-                where_clauses.append("h.first_seen >= ?")
-                params.append(since)
-
-            # Build final query
-            if where_clauses:
-                if query:
-                    base_query += " AND " + " AND ".join(where_clauses)
+                if fts_query:
+                    base_query = """
+                        SELECT h.id, h.sanitized_command, h.command_template,
+                               h.first_seen, h.last_seen, h.occurrence_count,
+                               t.name as tool_name
+                        FROM history_fts fts
+                        JOIN history_commands h ON fts.rowid = h.id
+                        LEFT JOIN tools t ON h.tool_id = t.id
+                        WHERE history_fts MATCH ?
+                    """
+                    params.append(fts_query)
                 else:
-                    base_query += " WHERE " + " AND ".join(where_clauses)
+                    base_query = """
+                        SELECT h.id, h.sanitized_command, h.command_template,
+                               h.first_seen, h.last_seen, h.occurrence_count,
+                               t.name as tool_name
+                        FROM history_commands h
+                        LEFT JOIN tools t ON h.tool_id = t.id
+                    """
 
-            base_query += " ORDER BY h.last_seen DESC LIMIT ?"
-            params.append(int(limit))
+                if tool:
+                    where_clauses.append("t.name LIKE ? ESCAPE '\\'")
+                    escaped_tool = tool.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+                    params.append(f"%{escaped_tool}%")
+                if since:
+                    where_clauses.append("h.first_seen >= ?")
+                    params.append(since)
 
-            rows = conn.execute(base_query, params).fetchall()
+                if where_clauses:
+                    joiner = " AND " if fts_query else " WHERE "
+                    base_query += joiner + " AND ".join(where_clauses)
+
+                if rank:
+                    base_query += " ORDER BY bm25(history_fts)"
+                else:
+                    base_query += " ORDER BY h.last_seen DESC"
+                base_query += " LIMIT ?"
+                params.append(int(limit))
+                return base_query, params
+
+            # Try AND first (precise)
+            and_q, and_p = _build_hist_query(
+                _build_fts_query(query) if query else None
+            )
+            rows = conn.execute(and_q, and_p).fetchall()
+
+            # Fallback to ranked OR if AND returned nothing and query is multi-word
+            if not rows and query and len(_tokenize_fts(query)) > 1:
+                or_q, or_p = _build_hist_query(
+                    _build_fts_query_or(query), rank=True
+                )
+                rows = conn.execute(or_q, or_p).fetchall()
 
             return [
                 {
