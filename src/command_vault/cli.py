@@ -111,6 +111,10 @@ Environment Variables:
     scripts_parser.add_argument('--library', help='Filter by library')
     scripts_parser.add_argument('--limit', '-n', type=int, default=10, help='Max results')
 
+    # Get script (full code)
+    script_parser = subparsers.add_parser('script', help='Get full script code by ID')
+    script_parser.add_argument('script_id', type=int, help='Script ID (from scripts search)')
+
     # Suggest command
     suggest_parser = subparsers.add_parser('suggest', help='Suggest commands for a goal')
     suggest_parser.add_argument('goal', help='What you want to accomplish')
@@ -223,6 +227,9 @@ Environment Variables:
             limit=args.limit
         )
 
+    elif args.command == 'script':
+        result = vault.get_script(script_id=args.script_id)
+
     elif args.command == 'suggest':
         result = vault.suggest_command(goal=args.goal)
 
@@ -316,12 +323,23 @@ def format_output(command: str, result, args=None):
     elif command == 'scripts':
         for item in result:
             print(f"\n{'='*60}")
-            print(f"Language: {item['language']}")
+            print(f"[ID: {item['id']}] Language: {item['language']}")
             print(f"Libraries: {', '.join(item.get('libraries', []))}")
             print(f"Source: {item['source'].get('file', '')}")
             if item.get('purpose'):
                 print(f"Purpose: {item['purpose'][:100]}...")
             print(f"\nPreview:\n{item['code_preview']}")
+
+    elif command == 'script':
+        if 'error' in result:
+            print(result['error'])
+        else:
+            print(f"# {result['source'].get('file', 'unknown')} [{result.get('section', '')}]")
+            print(f"# Language: {result['language']}  Libraries: {', '.join(result.get('libraries', []))}")
+            if result.get('purpose'):
+                print(f"# Purpose: {result['purpose']}")
+            print()
+            print(result['code'])
 
     elif command == 'suggest':
         for item in result:

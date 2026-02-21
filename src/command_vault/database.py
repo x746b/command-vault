@@ -692,6 +692,101 @@ class Database:
 
             return results
 
+    def get_script_by_id(self, script_id: int) -> Optional[dict]:
+        """Get full script code by ID."""
+        with self._get_connection() as conn:
+            row = conn.execute("""
+                SELECT s.id, s.language, s.code, s.purpose, s.libraries_used,
+                       s.source_section, w.filename, w.writeup_type, w.challenge_type
+                FROM scripts s
+                LEFT JOIN writeups w ON s.writeup_id = w.id
+                WHERE s.id = ?
+            """, (script_id,)).fetchone()
+
+            if not row:
+                return None
+
+            libraries = json.loads(row['libraries_used']) if row['libraries_used'] else []
+            return {
+                'id': row['id'],
+                'language': row['language'],
+                'code': row['code'],
+                'purpose': row['purpose'],
+                'libraries': libraries,
+                'section': row['source_section'],
+                'source': {
+                    'file': row['filename'],
+                    'type': row['writeup_type'],
+                    'challenge_type': row['challenge_type']
+                }
+            }
+
+    def get_commands_by_writeup(self, writeup_id: int) -> list[CommandResult]:
+        """Get all commands for a specific writeup."""
+        with self._get_connection() as conn:
+            rows = conn.execute("""
+                SELECT c.id, c.raw_command, c.command_template, c.purpose,
+                       c.source_section, t.name as tool_name, cat.name as category,
+                       w.filename, w.writeup_type, w.challenge_type
+                FROM commands c
+                LEFT JOIN tools t ON c.tool_id = t.id
+                LEFT JOIN categories cat ON t.category_id = cat.id
+                LEFT JOIN writeups w ON c.writeup_id = w.id
+                WHERE c.writeup_id = ?
+            """, (writeup_id,)).fetchall()
+
+            return [
+                CommandResult(
+                    id=row['id'],
+                    tool=row['tool_name'],
+                    raw_command=row['raw_command'],
+                    template=row['command_template'],
+                    purpose=row['purpose'],
+                    source={
+                        'file': row['filename'],
+                        'type': row['writeup_type'],
+                        'section': row['source_section'],
+                        'challenge_type': row['challenge_type']
+                    }
+                )
+                for row in rows
+            ]
+
+    def get_scripts_by_writeup(self, writeup_id: int) -> list[ScriptResult]:
+        """Get all scripts for a specific writeup."""
+        with self._get_connection() as conn:
+            rows = conn.execute("""
+                SELECT s.id, s.language, s.code, s.purpose, s.libraries_used,
+                       w.filename, w.writeup_type, w.challenge_type
+                FROM scripts s
+                LEFT JOIN writeups w ON s.writeup_id = w.id
+                WHERE s.writeup_id = ?
+            """, (writeup_id,)).fetchall()
+
+            results = []
+            for row in rows:
+                code = row['code']
+                code_preview = '\n'.join(code.split('\n')[:10])
+                if len(code.split('\n')) > 10:
+                    code_preview += '\n...'
+
+                libraries = json.loads(row['libraries_used']) if row['libraries_used'] else []
+
+                results.append(ScriptResult(
+                    id=row['id'],
+                    language=row['language'],
+                    purpose=row['purpose'],
+                    libraries=libraries,
+                    code_preview=code_preview,
+                    source={
+                        'file': row['filename'],
+                        'type': row['writeup_type'],
+                        'challenge_type': row['challenge_type']
+                    }
+                ))
+
+            return results
+
     # =========================================================================
     # LISTING OPERATIONS
     # =========================================================================

@@ -277,6 +277,20 @@ async def list_tools() -> list[Tool]:
             }
         ),
         Tool(
+            name="get_script",
+            description="Get full script code by ID (use search_scripts to find IDs first)",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "script_id": {
+                        "type": "integer",
+                        "description": "Script ID from search_scripts results"
+                    }
+                },
+                "required": ["script_id"]
+            }
+        ),
+        Tool(
             name="get_writeup_summary",
             description="Get summary of commands/scripts from a specific writeup",
             inputSchema={
@@ -472,6 +486,11 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
 
         elif name == "vault_stats":
             result = vault_tools.get_stats()
+
+        elif name == "get_script":
+            result = vault_tools.get_script(
+                script_id=arguments["script_id"]
+            )
 
         elif name == "get_writeup_summary":
             result = vault_tools.get_writeup_summary(

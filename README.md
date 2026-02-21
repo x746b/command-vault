@@ -9,7 +9,7 @@ Command Vault indexes **commands**, **scripts**, and **prose** from your penetra
 
 - **Command search** — FTS across commands with AND-first, bm25-ranked OR fallback for multi-word queries
 - **Prose search** — Search methodology text, attack explanations, and forensic analysis from writeups
-- **Script search** — Find Python, PowerShell, and Frida exploit scripts by language or library
+- **Script search & retrieval** — Find exploit scripts by language/library, retrieve full code by ID
 - **Ranked fallback** — Multi-word queries try AND (precise), then fall back to bm25-ranked OR (relevant)
 - **Shell history** — Index `~/.zsh_history` or `~/.bash_history` with deduplication and security redaction
 - **Tag filtering** — Search by `#hashtags` extracted from writeup content
@@ -61,8 +61,47 @@ vault search "ESC16" --json              # JSON output
 
 vault scripts --language python          # Search scripts
 vault scripts --library pwn
+vault scripts "fmtstr printf" --library pwn  # Find format string exploits
+
+vault script 147                         # Get full script code by ID
 
 vault suggest "kerberoasting"            # Tool suggestions grouped by category
+```
+
+### Retrieving Full Exploit Scripts
+
+Search returns a preview with the script ID, then use `vault script <ID>` to get the full code:
+
+```
+$ vault scripts "fmtstr printf" --library pwn
+============================================================
+[ID: 147] Language: python
+Libraries: pwn
+Source: What does the f say (pwn).md
+Preview:
+from pwn import *
+context.arch = 'amd64'
+...
+
+$ vault script 147
+# What does the f say (pwn).md
+# Language: python  Libraries: pwn
+from pwn import *
+context.arch = 'amd64'
+...
+glibc_base = glibc_read - 0x110180
+glibc_malloc_hook = glibc_base + 0x3ebc30
+for i in range(0, 8):
+    b = (glibc_one_gadget >> (i * 8)) & 0xff
+    send_printf(fmtstr_payload(8, { glibc_malloc_hook + i: b }))
+...
+```
+
+Same via MCP — AI calls `search_scripts` to find IDs, then `get_script` for full code:
+
+```
+search_scripts(query="RSA sage", library="Crypto")  ->  [ID: 239] 10-line preview
+get_script(script_id=239)                           ->  full 193-line Sage solver
 ```
 
 ### Prose Search
@@ -149,6 +188,7 @@ Or in `~/.claude.json` / `.mcp.json`:
 | `search_commands` | Search commands by keyword, tool, category, or tags |
 | `search_writeup_prose` | Search methodology text and explanations from writeups |
 | `search_scripts` | Search exploit scripts by language or library |
+| `get_script` | Get full script code by ID (from search_scripts results) |
 | `get_tool_examples` | Get usage examples for a specific tool |
 | `suggest_command` | Get command suggestions for a goal |
 | `list_tools` | List indexed tools |

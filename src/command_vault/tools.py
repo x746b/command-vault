@@ -261,6 +261,13 @@ class VaultTools:
         stats = self.db.get_stats()
         return stats.model_dump()
 
+    def get_script(self, script_id: int) -> dict:
+        """Get full script code by ID (from search_scripts results)."""
+        result = self.db.get_script_by_id(script_id)
+        if not result:
+            return {'error': f'Script not found: {script_id}'}
+        return result
+
     def get_writeup_summary(self, filename: str) -> dict:
         """
         Get summary of commands/scripts from a specific writeup.
@@ -275,13 +282,9 @@ class VaultTools:
         if not writeup:
             return {'error': f'Writeup not found: {filename}'}
 
-        # Get commands for this writeup
-        commands = self.db.search_commands(limit=100)
-        writeup_commands = [c for c in commands if c.source.get('file') == filename]
-
-        # Get scripts
-        scripts = self.db.search_scripts(limit=50)
-        writeup_scripts = [s for s in scripts if s.source.get('file') == filename]
+        # Get commands and scripts directly by writeup_id
+        writeup_commands = self.db.get_commands_by_writeup(writeup.id)
+        writeup_scripts = self.db.get_scripts_by_writeup(writeup.id)
 
         return {
             'writeup': writeup.model_dump(),
