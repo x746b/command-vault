@@ -25,6 +25,12 @@ Use the vault MCP tools when the user needs:
 - Python exploits using `pwntools`, `requests`, `impacket`
 - Frida scripts for mobile
 - PowerShell payloads
+- Use `search_scripts` to find by language/library, then `get_script` for full code
+
+### Prose & Methodology
+- Writeup text explaining techniques, analysis, and attack reasoning
+- "How was NTLM relay used against that box?"
+- "What was the forensic analysis for that DPAPI case?"
 
 ## When to Use LLM Knowledge
 
@@ -56,7 +62,11 @@ Rely on built-in knowledge for:
 | "Find certipy commands" | `search_commands` |
 | "How did I exploit ESC8?" | `search_commands` |
 | "Show me kerberoasting examples" | `search_commands` |
-| "Python script for buffer overflow" | `search_scripts` |
+| "Python script for buffer overflow" | `search_scripts` → `get_script` |
+| "Get that RSA Sage solver" | `search_scripts` → `get_script` |
+| "What libraries are available?" | `search_scripts` (list_libraries) |
+| "How was NTLM relay explained?" | `search_writeup_prose` |
+| "ADCS ESC8 methodology" | `search_writeup_prose` |
 | "What tools for AD enumeration?" | `suggest_command` |
 | "List all nmap examples" | `get_tool_examples` |
 | "What sliver command did I use?" | `search_history` |
@@ -91,6 +101,26 @@ User: "What was the command for running sliver?"
 Good approach:
 1. search_history(query="sliver") → Find user's actual past commands
 2. Return the exact command they used before
+```
+
+### Script Retrieval
+```
+User: "I need a pwntools format string exploit"
+
+Good approach:
+1. search_scripts(query="fmtstr", library="pwn") → Find matching scripts with IDs
+2. get_script(script_id=147) → Retrieve full exploit code
+3. Adapt the script to current target
+```
+
+### Prose Search
+```
+User: "How did we handle NTLM relay before?"
+
+Good approach:
+1. search_writeup_prose(query="NTLM relay") → Methodology and analysis text
+2. search_commands(query="ntlmrelayx") → Actual commands used
+3. Combine context with commands
 ```
 
 ### Combined Search
