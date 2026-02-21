@@ -61,6 +61,7 @@ vault search "ESC16" --json              # JSON output
 
 vault scripts --language python          # Search scripts
 vault scripts --library pwn
+vault scripts --list-libraries           # List all libraries with counts
 vault scripts "fmtstr printf" --library pwn  # Find format string exploits
 
 vault script 147                         # Get full script code by ID

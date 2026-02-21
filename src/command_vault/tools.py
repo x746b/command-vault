@@ -268,6 +268,10 @@ class VaultTools:
             return {'error': f'Script not found: {script_id}'}
         return result
 
+    def list_libraries(self) -> list[dict]:
+        """List all libraries found in indexed scripts with counts."""
+        return self.db.list_libraries()
+
     def get_writeup_summary(self, filename: str) -> dict:
         """
         Get summary of commands/scripts from a specific writeup.

@@ -109,6 +109,7 @@ Environment Variables:
     scripts_parser.add_argument('query', nargs='?', help='Search query')
     scripts_parser.add_argument('--language', '-l', help='Filter by language')
     scripts_parser.add_argument('--library', help='Filter by library')
+    scripts_parser.add_argument('--list-libraries', action='store_true', help='List available libraries with counts')
     scripts_parser.add_argument('--limit', '-n', type=int, default=10, help='Max results')
 
     # Get script (full code)
@@ -220,12 +221,15 @@ Environment Variables:
         )
 
     elif args.command == 'scripts':
-        result = vault.search_scripts(
-            query=args.query,
-            language=args.language,
-            library=args.library,
-            limit=args.limit
-        )
+        if args.list_libraries:
+            result = vault.list_libraries()
+        else:
+            result = vault.search_scripts(
+                query=args.query,
+                language=args.language,
+                library=args.library,
+                limit=args.limit
+            )
 
     elif args.command == 'script':
         result = vault.get_script(script_id=args.script_id)
@@ -321,14 +325,21 @@ def format_output(command: str, result, args=None):
                 print(f"\n  Template: {item['template']}")
 
     elif command == 'scripts':
-        for item in result:
-            print(f"\n{'='*60}")
-            print(f"[ID: {item['id']}] Language: {item['language']}")
-            print(f"Libraries: {', '.join(item.get('libraries', []))}")
-            print(f"Source: {item['source'].get('file', '')}")
-            if item.get('purpose'):
-                print(f"Purpose: {item['purpose'][:100]}...")
-            print(f"\nPreview:\n{item['code_preview']}")
+        if isinstance(result, list) and result and 'library' in result[0]:
+            # --list-libraries output
+            print(f"{'Library':<25} {'Scripts'}")
+            print("-" * 35)
+            for item in result:
+                print(f"{item['library']:<25} {item['count']}")
+        else:
+            for item in result:
+                print(f"\n{'='*60}")
+                print(f"[ID: {item['id']}] Language: {item['language']}")
+                print(f"Libraries: {', '.join(item.get('libraries', []))}")
+                print(f"Source: {item['source'].get('file', '')}")
+                if item.get('purpose'):
+                    print(f"Purpose: {item['purpose'][:100]}...")
+                print(f"\nPreview:\n{item['code_preview']}")
 
     elif command == 'script':
         if 'error' in result:

@@ -692,6 +692,21 @@ class Database:
 
             return results
 
+    def list_libraries(self) -> list[dict]:
+        """List all libraries found in indexed scripts with counts."""
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT libraries_used FROM scripts WHERE libraries_used IS NOT NULL"
+            ).fetchall()
+            libs: dict[str, int] = {}
+            for row in rows:
+                for lib in json.loads(row['libraries_used']):
+                    libs[lib] = libs.get(lib, 0) + 1
+            return [
+                {'library': lib, 'count': count}
+                for lib, count in sorted(libs.items(), key=lambda x: -x[1])
+            ]
+
     def get_script_by_id(self, script_id: int) -> Optional[dict]:
         """Get full script code by ID."""
         with self._get_connection() as conn:
