@@ -158,7 +158,6 @@ Found SSTI in the template engine:
 $ curl "http://target/" -d "name={{7*7}}"
 → 49
 ```
-```
 
 ### Implementation notes
 - **Explicit annotation** (preferred): add `# [worked]` / `# [dead-end]` / `# [rabbit-hole]` markers in code blocks. Parser extracts these during indexing
