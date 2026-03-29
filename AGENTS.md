@@ -12,6 +12,11 @@ Use the vault MCP tools when the user needs:
 - Attack techniques with specific tool combinations
 - Examples: "ESC13 exploitation", "kerberoasting", "ADCS abuse", "shadow credentials"
 
+### Cross-Writeup Technique Linking
+- "Show all boxes where I used RBCD" → `search_related`
+- "What AD techniques do I have examples for?" → `list_techniques`
+- Compare approaches for the same technique across different writeups
+
 ### Past Solutions
 - How similar problems were solved before
 - Commands from specific writeups (boxes, challenges, sherlocks)
@@ -61,6 +66,8 @@ Rely on built-in knowledge for:
 |--------------|-----|
 | "Find certipy commands" | `search_commands` |
 | "How did I exploit ESC8?" | `search_commands` |
+| "Show all boxes using RBCD" | `search_related` |
+| "What AD techniques do I have?" | `list_techniques` |
 | "Show me kerberoasting examples" | `search_commands` |
 | "Python script for buffer overflow" | `search_scripts` → `get_script` |
 | "Get that RSA Sage solver" | `search_scripts` → `get_script` |
