@@ -165,7 +165,25 @@ CREATE TABLE IF NOT EXISTS writeup_chunks (
     FOREIGN KEY (writeup_id) REFERENCES writeups(id)
 );
 
+-- Known attack techniques
+CREATE TABLE IF NOT EXISTS techniques (
+    id INTEGER PRIMARY KEY,
+    canonical_name TEXT UNIQUE NOT NULL,
+    technique_type TEXT
+);
+
+-- Technique-writeup junction
+CREATE TABLE IF NOT EXISTS technique_writeups (
+    technique_id INTEGER,
+    writeup_id INTEGER,
+    PRIMARY KEY (technique_id, writeup_id),
+    FOREIGN KEY (technique_id) REFERENCES techniques(id),
+    FOREIGN KEY (writeup_id) REFERENCES writeups(id)
+);
+
 -- Indexes
+CREATE INDEX IF NOT EXISTS idx_technique_writeups_tech ON technique_writeups(technique_id);
+CREATE INDEX IF NOT EXISTS idx_technique_writeups_wu ON technique_writeups(writeup_id);
 CREATE INDEX IF NOT EXISTS idx_commands_tool ON commands(tool_id);
 CREATE INDEX IF NOT EXISTS idx_commands_writeup ON commands(writeup_id);
 CREATE INDEX IF NOT EXISTS idx_scripts_writeup ON scripts(writeup_id);
@@ -332,7 +350,8 @@ class Database:
                 conn.execute(f"DROP TRIGGER IF EXISTS {trigger}")
 
             # Drop main tables
-            for table in ['command_tags', 'writeup_tags', 'commands', 'scripts',
+            for table in ['technique_writeups', 'techniques',
+                         'command_tags', 'writeup_tags', 'commands', 'scripts',
                          'writeup_chunks', 'writeups', 'tools', 'tags',
                          'categories', 'history_commands']:
                 conn.execute(f"DROP TABLE IF EXISTS {table}")
@@ -1018,11 +1037,12 @@ class Database:
             )
 
     def clear_writeup_data(self, writeup_id: int):
-        """Clear commands, scripts, and chunks for a writeup (for re-indexing)."""
+        """Clear commands, scripts, chunks, and technique links for a writeup (for re-indexing)."""
         with self._get_connection() as conn:
             conn.execute("DELETE FROM commands WHERE writeup_id = ?", (writeup_id,))
             conn.execute("DELETE FROM scripts WHERE writeup_id = ?", (writeup_id,))
             conn.execute("DELETE FROM writeup_chunks WHERE writeup_id = ?", (writeup_id,))
+            conn.execute("DELETE FROM technique_writeups WHERE writeup_id = ?", (writeup_id,))
             conn.commit()
 
     # =========================================================================
@@ -1126,6 +1146,112 @@ class Database:
         """Get total number of indexed writeups."""
         with self._get_connection() as conn:
             return conn.execute("SELECT COUNT(*) FROM writeups").fetchone()[0]
+
+    # =========================================================================
+    # TECHNIQUE OPERATIONS
+    # =========================================================================
+
+    def get_or_create_technique(self, canonical_name: str, technique_type: Optional[str] = None) -> int:
+        """Get technique ID, creating if necessary."""
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT id FROM techniques WHERE canonical_name = ?",
+                (canonical_name,)
+            ).fetchone()
+            if row:
+                return row['id']
+            cursor = conn.execute(
+                "INSERT INTO techniques (canonical_name, technique_type) VALUES (?, ?)",
+                (canonical_name, technique_type)
+            )
+            conn.commit()
+            return cursor.lastrowid
+
+    def link_technique_writeup(self, technique_id: int, writeup_id: int):
+        """Link a technique to a writeup."""
+        with self._get_connection() as conn:
+            conn.execute(
+                "INSERT OR IGNORE INTO technique_writeups (technique_id, writeup_id) VALUES (?, ?)",
+                (technique_id, writeup_id)
+            )
+            conn.commit()
+
+    def search_related(self, technique: str, limit: int = 20) -> list[dict]:
+        """Search for writeups related to a technique."""
+        with self._get_connection() as conn:
+            # Find technique by name (exact, then LIKE)
+            tech_row = conn.execute(
+                "SELECT id, canonical_name, technique_type FROM techniques WHERE LOWER(canonical_name) = LOWER(?)",
+                (technique,)
+            ).fetchone()
+            if not tech_row:
+                tech_row = conn.execute(
+                    "SELECT id, canonical_name, technique_type FROM techniques WHERE LOWER(canonical_name) LIKE LOWER(?)",
+                    (f'%{technique}%',)
+                ).fetchone()
+            if not tech_row:
+                return []
+
+            # Get writeups for this technique
+            rows = conn.execute("""
+                SELECT w.id as writeup_id, w.filename, w.title, w.writeup_type, w.difficulty
+                FROM technique_writeups tw
+                JOIN writeups w ON tw.writeup_id = w.id
+                WHERE tw.technique_id = ?
+                ORDER BY w.filename
+                LIMIT ?
+            """, (tech_row['id'], limit)).fetchall()
+
+            writeups = []
+            for row in rows:
+                # Get tools used in this writeup
+                tools = conn.execute("""
+                    SELECT DISTINCT t.name FROM commands c
+                    JOIN tools t ON c.tool_id = t.id
+                    WHERE c.writeup_id = ?
+                    ORDER BY t.name
+                """, (row['writeup_id'],)).fetchall()
+
+                # Get tags
+                tags = self._get_writeup_tags(conn, row['writeup_id'])
+
+                writeups.append({
+                    'filename': row['filename'],
+                    'title': row['title'],
+                    'type': row['writeup_type'],
+                    'difficulty': row['difficulty'],
+                    'tools': [t['name'] for t in tools],
+                    'tags': tags,
+                })
+
+            return [{
+                'technique': tech_row['canonical_name'],
+                'type': tech_row['technique_type'],
+                'writeup_count': len(writeups),
+                'writeups': writeups
+            }]
+
+    def list_techniques(self, min_writeups: int = 1) -> list[dict]:
+        """List all techniques with writeup counts."""
+        with self._get_connection() as conn:
+            rows = conn.execute("""
+                SELECT t.canonical_name, t.technique_type,
+                       COUNT(tw.writeup_id) as writeup_count
+                FROM techniques t
+                LEFT JOIN technique_writeups tw ON t.id = tw.technique_id
+                GROUP BY t.id
+                HAVING writeup_count >= ?
+                ORDER BY writeup_count DESC
+            """, (min_writeups,)).fetchall()
+
+            return [
+                {
+                    'technique': row['canonical_name'],
+                    'type': row['technique_type'],
+                    'writeup_count': row['writeup_count']
+                }
+                for row in rows
+            ]
 
     # =========================================================================
     # HISTORY OPERATIONS

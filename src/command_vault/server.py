@@ -334,6 +334,50 @@ async def list_tools() -> list[Tool]:
                 "required": ["query"]
             }
         ),
+        # Technique tools
+        Tool(
+            name="search_related",
+            description="Find writeups that share the same attack technique. "
+                       "Shows all approaches side by side with tools used. "
+                       "Examples: 'Kerberoasting', 'ADCS ESC8', 'SSTI', 'RBCD', 'LFI'",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "technique": {
+                        "type": "string",
+                        "description": "Technique name (e.g., 'Kerberoasting', 'ADCS ESC1', 'SQL Injection', 'Shadow Credentials')"
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "Maximum writeups to return"
+                    }
+                },
+                "required": ["technique"]
+            }
+        ),
+        Tool(
+            name="list_techniques",
+            description="List all indexed attack techniques with writeup counts",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "min_writeups": {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "Minimum writeup count to include"
+                    }
+                }
+            }
+        ),
+        Tool(
+            name="enrich",
+            description="Populate technique links from existing tags. No re-indexing needed.",
+            inputSchema={
+                "type": "object",
+                "properties": {}
+            }
+        ),
         # History tools
         Tool(
             name="index_history",
@@ -504,6 +548,19 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
                 tags=arguments.get("tags"),
                 limit=arguments.get("limit", 10)
             )
+
+        # Technique tools
+        elif name == "search_related":
+            result = vault_tools.search_related(
+                technique=arguments["technique"],
+                limit=arguments.get("limit", 20)
+            )
+        elif name == "list_techniques":
+            result = vault_tools.list_techniques(
+                min_writeups=arguments.get("min_writeups", 1)
+            )
+        elif name == "enrich":
+            result = vault_tools.enrich()
 
         # History tools
         elif name == "index_history":

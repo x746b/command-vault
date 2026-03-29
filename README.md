@@ -136,6 +136,23 @@ vault history stats                      # History statistics
 vault history clear --confirm            # Clear all
 ```
 
+### Technique Linking
+
+Find writeups that share the same attack technique — see all your approaches side by side:
+
+```bash
+vault techniques                         # List all indexed techniques
+vault techniques --min-count 5           # Only techniques with 5+ writeups
+
+vault related "RBCD"                     # All writeups using RBCD, with tools + tags
+vault related "ADCS ESC1"               # All writeups using ESC1
+vault related "SQL Injection"           # Works with canonical names
+
+vault enrich                             # Populate technique links from tags (no re-index)
+```
+
+Techniques are extracted from your `#hashtag` tags — no prose scanning, no false positives. Tags like `#RBCD`, `#SQLi`, `#ESC1` are mapped to canonical names. Run `vault enrich` after re-indexing to update technique links.
+
 ### Other
 
 ```bash
@@ -202,6 +219,9 @@ Or in `~/.claude.json` / `.mcp.json`:
 | `search_history` | Search indexed shell history |
 | `history_stats` | Get history statistics |
 | `clear_history` | Clear indexed history (requires `confirm=true`) |
+| `search_related` | Find writeups sharing a technique (e.g., "RBCD", "ADCS ESC1") |
+| `list_techniques` | List all indexed techniques with writeup counts |
+| `enrich` | Populate technique links from tags (no re-indexing needed) |
 
 ## Writeup Format
 

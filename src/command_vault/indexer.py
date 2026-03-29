@@ -9,6 +9,7 @@ from .database import Database
 from .parser import WriteupParser
 from .security import SecurityFilter
 from .models import IndexResult, Command, ShellType
+from .techniques import extract_techniques_from_tags
 
 logger = logging.getLogger(__name__)
 
@@ -189,10 +190,56 @@ class Indexer:
             )
             chunk_count += 1
 
+        # Enrich: link techniques from tags
+        self._enrich_writeup(writeup_id, writeup.tags)
+
         return {
             'commands': command_count,
             'scripts': script_count,
             'chunks': chunk_count
+        }
+
+    def _enrich_writeup(self, writeup_id: int, tags: list[str]):
+        """Extract techniques from tags and link to writeup."""
+        for tech in extract_techniques_from_tags(tags):
+            tech_id = self.db.get_or_create_technique(
+                tech['canonical'], tech['type']
+            )
+            self.db.link_technique_writeup(tech_id, writeup_id)
+
+    def enrich_all(self) -> dict:
+        """Populate technique links from existing DB tags. No file re-parsing."""
+        start_time = time.time()
+
+        with self.db._get_connection() as conn:
+            writeups = conn.execute("SELECT id FROM writeups ORDER BY id").fetchall()
+
+        enriched = 0
+        technique_links = 0
+
+        for wu in writeups:
+            with self.db._get_connection() as conn:
+                tags = self.db._get_writeup_tags(conn, wu['id'])
+                conn.execute("DELETE FROM technique_writeups WHERE writeup_id = ?", (wu['id'],))
+                conn.commit()
+
+            self._enrich_writeup(wu['id'], tags)
+            enriched += 1
+
+            with self.db._get_connection() as conn:
+                t_count = conn.execute(
+                    "SELECT COUNT(*) FROM technique_writeups WHERE writeup_id = ?",
+                    (wu['id'],)
+                ).fetchone()[0]
+                technique_links += t_count
+
+        duration = time.time() - start_time
+        logger.info(f"Enrichment complete: {enriched} writeups, {technique_links} technique links in {duration:.2f}s")
+
+        return {
+            'writeups_enriched': enriched,
+            'technique_links': technique_links,
+            'duration_seconds': round(duration, 2)
         }
 
     def index_all(

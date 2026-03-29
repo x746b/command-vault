@@ -329,6 +329,22 @@ class VaultTools:
         return [r.model_dump() for r in results]
 
     # =========================================================================
+    # TECHNIQUE TOOLS
+    # =========================================================================
+
+    def search_related(self, technique: str, limit: int = 20) -> list[dict]:
+        """Find writeups that share a technique."""
+        return self.db.search_related(technique=technique, limit=limit)
+
+    def list_techniques(self, min_writeups: int = 1) -> list[dict]:
+        """List all techniques with writeup counts."""
+        return self.db.list_techniques(min_writeups=min_writeups)
+
+    def enrich(self) -> dict:
+        """Enrich all writeups with technique links from existing tags."""
+        return self.indexer.enrich_all()
+
+    # =========================================================================
     # HISTORY TOOLS
     # =========================================================================
 

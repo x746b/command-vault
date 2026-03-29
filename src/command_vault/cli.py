@@ -142,6 +142,19 @@ Environment Variables:
     prose_parser.add_argument('--limit', '-n', type=int, default=10, help='Max results')
     prose_parser.add_argument('--chars', '-l', type=int, default=300, help='Max chars per passage (0 for full text)')
 
+    # Related command (technique linking)
+    related_parser = subparsers.add_parser('related', help='Find writeups sharing a technique')
+    related_parser.add_argument('technique', help='Technique name (e.g., "Kerberoasting", "ADCS ESC8")')
+    related_parser.add_argument('--limit', '-n', type=int, default=20, help='Max results')
+
+    # Techniques command
+    techniques_parser = subparsers.add_parser('techniques', help='List all indexed techniques')
+    techniques_parser.add_argument('--min-count', '-m', type=int, default=1,
+                                    help='Minimum writeup count')
+
+    # Enrich command
+    subparsers.add_parser('enrich', help='Populate technique links from existing tags (no re-index)')
+
     # Index command
     index_parser = subparsers.add_parser('index', help='Index writeups')
     index_group = index_parser.add_mutually_exclusive_group()
@@ -253,6 +266,18 @@ Environment Variables:
             tags=args.tags,
             limit=args.limit
         )
+
+    elif args.command == 'related':
+        result = vault.search_related(
+            technique=args.technique,
+            limit=args.limit
+        )
+
+    elif args.command == 'techniques':
+        result = vault.list_techniques(min_writeups=args.min_count)
+
+    elif args.command == 'enrich':
+        result = vault.enrich()
 
     elif args.command == 'index':
         directories = args.directories if args.directories else None
@@ -386,6 +411,36 @@ def format_output(command: str, result, args=None):
             print(f"\n{'='*60}")
             print(f"Source: {filename} [{section}]")
             print(f"\n  {content}")
+
+    elif command == 'related':
+        if not result:
+            print("No results found for this technique.")
+            return
+        for entry in result:
+            print(f"\nTechnique: {entry['technique']} ({entry.get('type', '')})")
+            print(f"Found in {entry['writeup_count']} writeup(s):\n")
+            for wu in entry.get('writeups', []):
+                diff = f" ({wu['difficulty']})" if wu.get('difficulty') else ""
+                print(f"  {wu['filename']}{diff}")
+                tools = wu.get('tools', [])
+                if tools:
+                    print(f"    Tools: {', '.join(tools[:10])}")
+                tags = wu.get('tags', [])
+                if tags:
+                    print(f"    Tags: {' '.join('#' + t for t in tags)}")
+                print()
+
+    elif command == 'techniques':
+        print(f"{'Technique':<35} {'Type':<15} {'Writeups'}")
+        print("-" * 60)
+        for item in result:
+            print(f"{item['technique']:<35} {item.get('type', ''):<15} {item['writeup_count']}")
+
+    elif command == 'enrich':
+        print(f"Enrichment complete:")
+        print(f"  Writeups enriched:  {result.get('writeups_enriched', 0)}")
+        print(f"  Technique links:    {result.get('technique_links', 0)}")
+        print(f"  Duration:           {result.get('duration_seconds', 0)}s")
 
     elif command == 'tags':
         print(f"{'Tag':<25} {'Writeups':<12} {'Commands'}")
