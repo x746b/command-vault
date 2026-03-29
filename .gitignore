@@ -1,3 +1,7 @@
+# Working directories
+.analyze/
+_convert_/
+
 # Python
 __pycache__/
 *.py[cod]
