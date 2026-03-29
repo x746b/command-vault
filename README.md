@@ -22,6 +22,12 @@ Command Vault indexes **commands**, **scripts**, and **prose** from your penetra
 Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/).
 
 ```bash
+pip install command-vault-mcp
+```
+
+Or from source:
+
+```bash
 git clone https://github.com/x746b/command-vault.git
 cd command-vault
 uv pip install -e .
