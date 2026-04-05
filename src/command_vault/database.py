@@ -302,10 +302,12 @@ END;
 class Database:
     """SQLite database wrapper for Command Vault."""
 
-    def __init__(self, db_path: str):
+    def __init__(self, db_path: str, readonly: bool = False):
         self.db_path = Path(db_path)
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._init_db()
+        self.readonly = readonly
+        if not readonly:
+            self.db_path.parent.mkdir(parents=True, exist_ok=True)
+            self._init_db()
 
     def _init_db(self):
         """Initialize database schema."""
@@ -326,7 +328,10 @@ class Database:
     @contextmanager
     def _get_connection(self):
         """Get database connection with row factory."""
-        conn = sqlite3.connect(self.db_path)
+        if self.readonly:
+            conn = sqlite3.connect(f"file:{self.db_path}?mode=ro", uri=True)
+        else:
+            conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         try:
             yield conn

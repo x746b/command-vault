@@ -188,12 +188,15 @@ Or in `~/.claude.json` / `.mcp.json`:
       "args": ["-m", "command_vault.server"],
       "env": {
         "VAULT_DB": "~/.local/share/command-vault/vault.db",
-        "WRITEUPS": "~/writeups"
+        "WRITEUPS": "~/writeups",
+        "VAULT_READONLY": "1"
       }
     }
   }
 }
 ```
+
+> **Tip:** Set `VAULT_READONLY=1` when using with AI assistants to prevent accidental writes (index, clear_history). The database opens via SQLite's `?mode=ro` URI — no journal/WAL files created, no locks needed. Remove the variable when you need to re-index.
 
 ### Environment Variables
 
@@ -204,6 +207,7 @@ Or in `~/.claude.json` / `.mcp.json`:
 | `WRITEUPS_BOXES` | Boxes directory (legacy, path-based type detection) | None |
 | `WRITEUPS_CHALLENGES` | Challenges directory (legacy) | None |
 | `WRITEUPS_SHERLOCKS` | Sherlocks directory (legacy) | None |
+| `VAULT_READONLY` | Open database in read-only mode (`1`, `true`, `yes`) | Off |
 
 ### MCP Tools
 

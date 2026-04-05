@@ -63,7 +63,8 @@ def create_server() -> tuple[Server, VaultTools]:
     config = get_config()
 
     # Initialize database
-    db = Database(config['db_path'])
+    readonly = os.environ.get('VAULT_READONLY', '').lower() in ('1', 'true', 'yes')
+    db = Database(config['db_path'], readonly=readonly)
 
     # Filter out empty directories
     writeup_dirs = {k: v for k, v in config['writeup_dirs'].items() if v}
