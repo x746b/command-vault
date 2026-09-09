@@ -26,11 +26,9 @@ wheels/
 
 # Virtual environments
 .venv/
+.venv-v2/
 venv/
 ENV/
-
-# uv
-uv.lock
 
 # IDE
 .idea/
@@ -43,6 +41,9 @@ uv.lock
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Generated local evaluation output (keep reusable cases and scripts)
+/evals/*-results.json
 
 # Database (user-specific)
 *.db

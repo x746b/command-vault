@@ -8,7 +8,7 @@ import re
 import hashlib
 import logging
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from .security import SecurityFilter
@@ -264,7 +264,7 @@ class HistoryParser:
 
             match = ZSH_HISTORY_PATTERN.match(line)
             if match:
-                timestamp = datetime.fromtimestamp(int(match.group(1)))
+                timestamp = datetime.fromtimestamp(int(match.group(1)), timezone.utc)
                 command = match.group(2)
                 commands.append({
                     'timestamp': timestamp,
@@ -297,7 +297,7 @@ class HistoryParser:
             # Check for timestamp line
             ts_match = BASH_TIMESTAMP_PATTERN.match(line)
             if ts_match:
-                current_timestamp = datetime.fromtimestamp(int(ts_match.group(1)))
+                current_timestamp = datetime.fromtimestamp(int(ts_match.group(1)), timezone.utc)
                 continue
 
             # Regular command line

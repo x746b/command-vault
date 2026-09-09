@@ -5,47 +5,71 @@ import argparse
 import json
 import sys
 import os
+import sqlite3
 from pathlib import Path
 
 from .database import Database
 from .tools import VaultTools
+from .config import get_config
+from .knowledge import Knowledge
+from .record_search import search_records, search_relations
+
+
+def bounded_int(minimum, maximum=None):
+    """Argparse validator matching the MCP parameter bounds."""
+    def parse(value):
+        try:
+            number = int(value)
+        except ValueError as exc:
+            raise argparse.ArgumentTypeError('must be an integer') from exc
+        if number < minimum or (maximum is not None and number > maximum):
+            bounds = f'{minimum}..{maximum}' if maximum is not None else f'>= {minimum}'
+            raise argparse.ArgumentTypeError(f'must be {bounds}')
+        return number
+    return parse
+
+
+def run_knowledge_command(args, db_path):
+    """Use the MCP retrieval service directly, with no server or index writes."""
+    try:
+        db = Database(db_path, readonly=True)
+        knowledge = Knowledge(db)
+        if args.command == 'knowledge':
+            page = knowledge.search(query=args.query, writeup_type=args.type, tags=args.tags,
+                                    required_terms=args.required_terms, limit=args.limit,
+                                    max_chars=args.max_chars, cursor=args.cursor)
+        elif args.command == 'context':
+            page = knowledge.read_context(args.reference, offset=args.offset, max_chars=args.max_chars)
+        elif args.command == 'related':
+            page = search_relations(db,args.technique,limit=args.limit,
+                                    max_chars=args.max_chars if args.max_chars is not None else 12000,cursor=args.cursor)
+        else:
+            options = dict(query=args.query, limit=args.limit,
+                           max_chars=args.max_chars if args.max_chars is not None else 12000,
+                           cursor=args.cursor)
+            if args.command == 'search':
+                page = search_records(db, 'command', **options, tool=args.tool, category=args.category,
+                                      writeup_type=args.type, tags=args.tags)
+            elif args.command == 'scripts':
+                if args.list_libraries:
+                    raise ValueError('--page is for script search, not --list-libraries')
+                page = search_records(db, 'script', **options, language=args.language, library=args.library)
+            else:
+                page = search_records(db, 'history', **options, tool=args.tool, since=args.since)
+    except (ValueError, OSError, sqlite3.Error) as exc:
+        message = json.dumps({'error': str(exc)}) if args.json else f'Error: {exc}'
+        print(message, file=sys.stderr)
+        raise SystemExit(1) from exc
+    result = page.model_dump()
+    if args.json or args.command not in ('knowledge', 'context'):
+        print(json.dumps(result, indent=2))
+    else:
+        format_output(args.command, result, args=args)
 
 
 def get_default_config():
-    """Get default configuration.
-
-    Supports both unified (WRITEUPS) and legacy (WRITEUPS_BOXES, etc.) env vars.
-    - WRITEUPS: Single directory with full tag-based categorization
-    - WRITEUPS_BOXES, WRITEUPS_CHALLENGES, WRITEUPS_SHERLOCKS: Legacy dirs (directory-based type)
-
-    When WRITEUPS is set, writeups in that directory use content-based type detection
-    and full #hashtag extraction. Legacy directories use directory-based type detection.
-    """
-    writeup_dirs = {}
-
-    # Check for unified WRITEUPS env var (takes priority)
-    unified_dir = os.environ.get('WRITEUPS', '')
-    if unified_dir:
-        writeup_dirs['unified'] = unified_dir
-
-    # Also include legacy env vars for backward compatibility
-    # These work alongside unified dir
-    legacy_dirs = {
-        'boxes': os.environ.get('WRITEUPS_BOXES', ''),
-        'challenges': os.environ.get('WRITEUPS_CHALLENGES', ''),
-        'sherlocks': os.environ.get('WRITEUPS_SHERLOCKS', ''),
-    }
-    for key, value in legacy_dirs.items():
-        if value:
-            writeup_dirs[key] = value
-
-    return {
-        'db_path': os.environ.get(
-            'VAULT_DB',
-            str(Path.home() / '.local/share/command-vault/vault.db')
-        ),
-        'writeup_dirs': writeup_dirs
-    }
+    """Compatibility alias for shared CLI/MCP configuration."""
+    return get_config()
 
 
 def main():
@@ -58,6 +82,8 @@ Examples:
   vault search --tool nmap --category recon
   vault search --tag windows --tag ad   # Filter by tags
   vault prose "NTLM relay"            # Search writeup prose
+  vault knowledge "Security log cleared" --require-term 1102 --type sherlock
+  vault context "<reference from knowledge>" --max-chars 8000
   vault suggest "crack NTLM hash"
   vault tools --category ad
   vault tags                            # List all tags
@@ -142,6 +168,25 @@ Environment Variables:
     prose_parser.add_argument('--limit', '-n', type=int, default=10, help='Max results')
     prose_parser.add_argument('--chars', '-l', type=int, default=300, help='Max chars per passage (0 for full text)')
 
+    knowledge_parser = subparsers.add_parser('knowledge', help='Search explanatory evidence with MCP-equivalent controls')
+    knowledge_parser.add_argument('query', help='Topic or information need to search')
+    knowledge_parser.add_argument('--type', '-T', choices=['box', 'challenge', 'sherlock'], help='Filter by source type')
+    knowledge_parser.add_argument('--tag', '-g', action='append', dest='tags', help='Required tag (repeatable; all must match)')
+    knowledge_parser.add_argument('--require-term', '--require', action='append', dest='required_terms',
+                                  help='Term that must match even on fallback (repeatable, at most 10)')
+    knowledge_parser.add_argument('--limit', '-n', type=bounded_int(1, 100), default=5, help='Max results (1..100; default 5)')
+    knowledge_parser.add_argument('--max-chars', type=bounded_int(500, 20000), default=10000,
+                                  help='Result budget (500..20000; default 10000)')
+    knowledge_parser.add_argument('--json', action='store_true', default=argparse.SUPPRESS, help='Output the structured MCP-equivalent page')
+    knowledge_parser.add_argument('--cursor', help='Continue with next_cursor from the same query and filters')
+
+    context_parser = subparsers.add_parser('context', help='Read the source section behind a search reference')
+    context_parser.add_argument('reference', help='Copy the complete reference returned by knowledge')
+    context_parser.add_argument('--offset', type=bounded_int(0), default=0, help='Character offset from next_offset (default 0)')
+    context_parser.add_argument('--max-chars', type=bounded_int(500, 20000), default=8000,
+                                help='Page size (500..20000; default 8000)')
+    context_parser.add_argument('--json', action='store_true', default=argparse.SUPPRESS, help='Output the structured MCP-equivalent page')
+
     # Related command (technique linking)
     related_parser = subparsers.add_parser('related', help='Find writeups sharing a technique')
     related_parser.add_argument('technique', help='Technique name (e.g., "Kerberoasting", "ADCS ESC8")')
@@ -185,6 +230,13 @@ Environment Variables:
     history_search.add_argument('--since', help='Filter by date (ISO format)')
     history_search.add_argument('--limit', '-n', type=int, default=20, help='Max results')
 
+    # Preserve legacy list output; opt into the shared MCP page contract explicitly.
+    for paged_parser in (search_parser, scripts_parser, history_search, related_parser):
+        paged_parser.add_argument('--page', action='store_true', help='Return a structured JSON page with a continuation cursor')
+        paged_parser.add_argument('--cursor', help='Continue the same search using its next_cursor')
+        paged_parser.add_argument('--max-chars', type=bounded_int(500, 20000), help='Page record budget (enables --page; default 12000)')
+        paged_parser.add_argument('--json', action='store_true', default=argparse.SUPPRESS, help='Output JSON')
+
     # history stats
     history_subparsers.add_parser('stats', help='Show history statistics')
 
@@ -213,9 +265,15 @@ Environment Variables:
         sys.exit(1)
 
     # Initialize
-    config = get_default_config()
+    config = get_config()
     db_path = args.db or config['db_path']
-    db = Database(db_path)
+    paged_records = args.command in ('search', 'scripts', 'related') or (args.command == 'history' and args.history_command == 'search')
+    if args.command in ('knowledge', 'context') or (paged_records and
+            (args.page or args.cursor is not None or args.max_chars is not None)):
+        run_knowledge_command(args, db_path)
+        return
+    writing = args.command in ('index', 'enrich', 'maintain') or (args.command == 'history' and getattr(args, 'history_command', None) in ('index', 'clear'))
+    db = Database(db_path, readonly=not writing)
 
     writeup_dirs = {k: v for k, v in config['writeup_dirs'].items() if v and Path(v).exists()}
     vault = VaultTools(db, writeup_dirs)
@@ -338,7 +396,42 @@ def format_output(command: str, result, args=None):
         print("No results found.")
         return
 
-    if command == 'search':
+    if command == 'knowledge':
+        print(f"Match mode: {result['match_mode']}")
+        if result['unmatched_query_terms']:
+            print(f"Unmatched query terms: {', '.join(result['unmatched_query_terms'])}")
+        if result['unmatched_required_terms']:
+            print(f"Unmatched required terms: {', '.join(result['unmatched_required_terms'])}")
+        if result['notice']:
+            print(result['notice'])
+        if not result['results']:
+            print('No results found.')
+        for item in result['results']:
+            print(f"\nReference: {item['reference']}")
+            if item.get('source'):
+                print(f"Source: {item['source']['filename']} [{item.get('section', '')}]")
+            if item.get('question_only'):
+                print('Question-only result; no answer established.')
+            print(item.get('content') or item.get('notice', ''))
+        if result['truncated']:
+            print('\nResults truncated; use vault context with a returned reference for more.')
+        if result['next_cursor']:
+            print(f"\nNext cursor: {result['next_cursor']}")
+            print('Repeat this search with --cursor and the same query/filters to continue.')
+
+    elif command == 'context':
+        source = result['source']
+        print(f"Reference: {result['reference']}")
+        print(f"Source: {source['filename']} [{source.get('section', '')}]")
+        print(f"Source status: {result['source_status']}")
+        print(f"Offset: {result['offset']}")
+        if source.get('image_references_present'):
+            print('Image references present; image content has not been extracted.')
+        print(f"\n{result['content']}")
+        if result['next_offset'] is not None:
+            print(f"\nNext offset: {result['next_offset']} (use --offset {result['next_offset']})")
+
+    elif command == 'search':
         for item in result:
             print(f"\n{'='*60}")
             print(f"Tool: {item.get('tool', 'unknown')}")

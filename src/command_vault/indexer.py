@@ -2,6 +2,7 @@
 
 import logging
 import time
+import hashlib
 from pathlib import Path
 from typing import Optional
 
@@ -10,6 +11,7 @@ from .parser import WriteupParser
 from .security import SecurityFilter
 from .models import IndexResult, Command, ShellType
 from .techniques import extract_techniques_from_tags
+from .documents import PARSER_VERSION
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +55,7 @@ class Indexer:
         scripts_extracted = 0
         chunks_extracted = 0
 
-        path = Path(directory)
+        path = Path(directory).expanduser().resolve()
         if not path.exists():
             return IndexResult(
                 files_processed=0,
@@ -64,15 +66,13 @@ class Indexer:
             )
 
         # Find all markdown files
-        md_files = list(path.glob("**/*.md"))
+        md_files = sorted(path.glob("**/*.md"))
         logger.info(f"Found {len(md_files)} markdown files in {directory}")
-
-        # Get already indexed files if skipping existing
-        indexed_files = self.db.get_indexed_filenames() if skip_existing else set()
 
         for md_file in md_files:
             # Skip if already indexed
-            if skip_existing and md_file.name in indexed_files:
+            digest = hashlib.sha256(md_file.read_bytes()).hexdigest()
+            if not force_rebuild and self.db.source_fingerprint(str(md_file)) == (digest, PARSER_VERSION):
                 files_skipped += 1
                 continue
 
@@ -132,6 +132,11 @@ class Indexer:
         Returns:
             Dict with counts: {commands, scripts, chunks}
         """
+        with self.db.transaction():
+            return self._index_file(filepath, force_rebuild, source_dir)
+
+    def _index_file(self, filepath, force_rebuild=False, source_dir=None):
+        before_hash = hashlib.sha256(Path(filepath).read_bytes()).hexdigest()
         # Parse the file with appropriate settings based on source_dir
         # 'unified' dir enables full content scanning and content-based type detection
         full_scan = (source_dir == 'unified')
@@ -192,6 +197,10 @@ class Indexer:
 
         # Enrich: link techniques from tags
         self._enrich_writeup(writeup_id, writeup.tags)
+        after_hash = hashlib.sha256(Path(filepath).read_bytes()).hexdigest()
+        if before_hash != after_hash:
+            raise ValueError('Source changed during indexing; retry this document')
+        self.db.set_source_fingerprint(writeup_id, after_hash, PARSER_VERSION)
 
         return {
             'commands': command_count,
@@ -259,9 +268,14 @@ class Indexer:
         Returns:
             Combined IndexResult
         """
+        if not directories:
+            raise ValueError('No source directories configured; set WRITEUPS or pass directories')
+        for directory in directories.values():
+            if not Path(directory).expanduser().is_dir():
+                raise ValueError(f'Source directory not found: {directory}')
         if force_rebuild:
             logger.info("Force rebuild requested - resetting database")
-            self.db.reset()
+            self.db.clear_writeups()
             self.security.clear_log()
         elif add_new_only:
             existing_count = self.db.get_writeup_count()

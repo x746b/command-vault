@@ -201,9 +201,11 @@ class WriteupParser:
         path = Path(filepath)
         filename = path.name
 
-        # Legacy behavior: detect by directory path
-        if source_dir != 'unified':
-            if '/boxes/' in filepath or '\\boxes\\' in filepath:
+        # Explicit collection directories outrank guesses from filename/prose.
+        normalized_path = filepath.replace('\\', '/').lower()
+        collection_path = any('/' + name + '/' in normalized_path for name in ('boxes','challenges','sherlocks'))
+        if source_dir != 'unified' or collection_path:
+            if '/boxes/' in normalized_path:
                 difficulty = self._extract_difficulty(filename)
                 return {
                     'type': WriteupType.BOX,
@@ -211,7 +213,7 @@ class WriteupParser:
                     'difficulty': difficulty
                 }
 
-            elif '/challenges/' in filepath or '\\challenges\\' in filepath:
+            elif '/challenges/' in normalized_path:
                 # Format: "Name (type).md"
                 match = re.search(r'\(([^)]+)\)\.md$', filename, re.IGNORECASE)
                 challenge_type = match.group(1).lower().strip() if match else 'misc'
@@ -223,7 +225,7 @@ class WriteupParser:
                     'difficulty': None
                 }
 
-            elif '/sherlocks/' in filepath or '\\sherlocks\\' in filepath:
+            elif '/sherlocks/' in normalized_path:
                 # Format: "Name (Difficulty).md"
                 match = re.search(r'\(([^)]+)\)\.md$', filename, re.IGNORECASE)
                 difficulty = match.group(1) if match else None
@@ -413,7 +415,8 @@ class WriteupParser:
 
         # Find all fenced code blocks
         for match in FENCED_BLOCK_PATTERN.finditer(content):
-            language = match.group(1) or ''
+            language = (match.group(1) or '').lower()
+            language = {'py': 'python', 'js': 'javascript', 'ps1': 'powershell', 'shell': 'bash', 'sh': 'bash'}.get(language, language)
             code = match.group(2).strip()
 
             if not code:
@@ -535,6 +538,11 @@ class WriteupParser:
         if block.is_script:
             return commands
 
+        # Structured output/configuration belongs to evidence chunks, not tools.
+        if block.language not in ('bash', 'zsh', 'console', 'terminal', 'text', '',
+                                  'powershell', 'ps1', 'cmd', 'python', 'py', 'sql', 'http'):
+            return commands
+
         # Determine shell type and pattern
         if block.language in ('powershell', 'ps1'):
             shell_type = ShellType.POWERSHELL
@@ -594,6 +602,7 @@ class WriteupParser:
                     if self._looks_like_command(line):
                         matches.append(line)
 
+        seen = set()
         for cmd in matches:
             cmd = cmd.strip()
             if not cmd:
@@ -611,6 +620,13 @@ class WriteupParser:
 
             # Identify tool
             tool_name = self._identify_tool(cmd)
+            if not tool_name or not re.search(r'[A-Za-z]', tool_name):
+                continue
+            if re.search(r'[|{}<>]', tool_name):
+                continue
+            if cmd in seen:
+                continue
+            seen.add(cmd)
 
             # Create template
             template = self._templatize(cmd)
@@ -896,6 +912,7 @@ class WriteupParser:
                 commands.extend(extracted)
 
         # Extract prose chunks
-        chunks = self.extract_prose_chunks(content)
+        from .documents import knowledge_chunks
+        chunks = knowledge_chunks(content)
 
         return writeup, commands, scripts, chunks

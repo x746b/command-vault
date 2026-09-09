@@ -80,6 +80,7 @@ class CommandResult(BaseModel):
     template: Optional[str] = None
     purpose: Optional[str] = None
     source: dict  # {file, type, section, challenge_type}
+    match_mode: str = 'filtered'
 
 
 class ScriptResult(BaseModel):
@@ -89,6 +90,7 @@ class ScriptResult(BaseModel):
     libraries: list[str] = []
     code_preview: str  # First N lines
     source: dict
+    match_mode: str = 'filtered'
 
 
 class ToolInfo(BaseModel):

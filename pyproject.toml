@@ -1,11 +1,11 @@
 [project]
 name = "command-vault-mcp"
-version = "0.8.0"
+version = "0.9.1"
 description = "Search and retrieve security commands, exploit scripts, and methodology from your pentest writeups and shell history. CLI + MCP server for AI assistants."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "mcp>=1.0.0",
+    "mcp>=2.2,<3",
     "pydantic>=2.0",
 ]
 

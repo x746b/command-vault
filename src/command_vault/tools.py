@@ -2,6 +2,7 @@
 
 import logging
 import time
+from collections import Counter
 from pathlib import Path
 from typing import Optional
 
@@ -177,6 +178,8 @@ class VaultTools:
         Returns:
             List of suggested commands with explanations
         """
+        if context:
+            raise ValueError('context is not supported; use explicit tool/category/tags filters with search_commands')
         # Search for relevant commands
         results = self.db.search_commands(query=goal, limit=15)
 
@@ -366,6 +369,10 @@ class VaultTools:
         Returns:
             Indexing statistics
         """
+        with self.db.transaction():
+            return self._index_history(path, since)
+
+    def _index_history(self, path, since=None):
         start_time = time.time()
 
         # Expand path
@@ -397,13 +404,22 @@ class VaultTools:
             'tools_identified': set(),
         }
 
+        counts = Counter(parser.get_command_hash(e['command']) for e in commands)
+        date_ranges = {}
+        for entry in commands:
+            if entry['timestamp']:
+                key = parser.get_command_hash(entry['command'])
+                stamp = entry['timestamp'].isoformat()
+                first, last = date_ranges.get(key, (stamp, stamp))
+                date_ranges[key] = (min(first, stamp), max(last, stamp))
+        processed_hashes = set()
         for entry in commands:
             stats['commands_processed'] += 1
             cmd = entry['command']
             timestamp = entry['timestamp'].isoformat() if entry['timestamp'] else None
 
             # Filter by date if specified
-            if since and timestamp and timestamp < since:
+            if since and (not timestamp or timestamp < since):
                 continue
 
             # Check blocklist
@@ -417,6 +433,11 @@ class VaultTools:
 
             # Generate hash for deduplication
             cmd_hash = parser.get_command_hash(cmd)
+            first_timestamp, timestamp = date_ranges.get(cmd_hash, (None, None))
+            if cmd_hash in processed_hashes:
+                stats['commands_skipped_duplicate'] += 1
+                continue
+            processed_hashes.add(cmd_hash)
             if cmd_hash in existing_hashes:
                 stats['commands_skipped_duplicate'] += 1
                 # Still update occurrence count
@@ -428,7 +449,9 @@ class VaultTools:
                     tool_id=None,
                     timestamp=timestamp,
                     source_file=str(filepath),
-                    shell_type=entry['shell_type']
+                    shell_type=entry['shell_type'],
+                    occurrence_count=counts[cmd_hash],
+                    first_timestamp=first_timestamp
                 )
                 continue
 
@@ -456,7 +479,9 @@ class VaultTools:
                 tool_id=tool_id,
                 timestamp=timestamp,
                 source_file=str(filepath),
-                shell_type=entry['shell_type']
+                shell_type=entry['shell_type'],
+                occurrence_count=counts[cmd_hash],
+                first_timestamp=first_timestamp
             )
 
             if is_new:

@@ -1,5 +1,91 @@
 # Command Vault (also MCP)
 
+## 0.9.1: search continuation and precise diagnostics
+
+All MCP search tools (including related-writeup search and tool examples) accept `cursor` and
+`max_chars`. Repeat the same query and filters with `next_cursor`; `limit` and `max_chars` may change
+between pages. Cursors are stateless and bound to the query/filters and database file revision;
+changed databases and mismatched/corrupt cursors require a new search. No index rebuild is needed.
+
+`has_more` indicates additional records. `records_clipped` indicates shortened fields or a
+`kind: reference` record whose content must be fetched with `read_context`/`get_script`. `truncated`
+remains the compatibility signal for clipping or a result budget cutoff. The character budget
+applies to serialized result records, excluding the page envelope; related search budgets its
+nested writeup records. Result variants and context sources now have explicit validated schemas.
+
+Knowledge search reports `unmatched_query_terms` and `unmatched_required_terms` separately. The latter
+preserves the exact supplied required terms, including those absent from the query. `unmatched_terms`
+is retained as their compatibility union. These fields report individual absence under source/tag
+filters; terms that exist separately may still have no jointly matching document.
+
+```sh
+vault knowledge "audit logs" --require-term ZQXJ92814 --json
+vault knowledge "windows" --limit 100 --max-chars 2000 --json
+vault knowledge "windows" --cursor '<next_cursor>' --max-chars 4000 --json
+vault search "file" --page --max-chars 2000
+vault search "file" --cursor '<next_cursor>' --max-chars 2000
+```
+
+`vault knowledge` always returns the page contract. Existing CLI `search`, `scripts`, `history search`,
+and `related` retain their legacy output unless `--page`, `--cursor`, or `--max-chars` is supplied;
+these options enable structured JSON pagination. Related results retain the grouped `writeups` shape,
+with page and total writeup counts. Document/history references support bounded context reads too.
+
+Reconnect the MCP client to load the updated tool schemas. CLI changes are available immediately.
+
+## 0.9: MCP 2.x and section-aware retrieval
+
+Requires `mcp>=2.2,<3`; use the checked-in `uv.lock` with `uv sync --frozen` for reproducible installs.
+The CLI remains available. The MCP API retains existing tool names, but search/list tools now return
+a structured `SearchPage` object with `results`, `match_mode`, `next_cursor`, `truncated`, and `notice`.
+Consumers expecting a bare array must read `results` instead.
+
+The two new retrieval operations are available from the CLI as well:
+
+```sh
+vault knowledge "Security audit log" --type sherlock --require-term 1102 --limit 5
+vault context '<complete reference from knowledge>' --max-chars 8000
+vault context '<same reference>' --offset 8000 --max-chars 8000
+vault knowledge "Security audit log" --require-term 1102 --json
+```
+
+Use the actual `next_offset` returned by a context page for subsequent reads. Repeat `--require-term`
+(alias `--require`) or `--tag` for multiple constraints. Knowledge defaults to five results and a
+10,000-character result budget; context defaults to 8,000 characters. Both accept `--max-chars`
+from 500 to 20,000 and `--json` before or after the subcommand. Use the global `--db` before the
+subcommand to select another database. Runtime errors go to stderr with exit status 1; with `--json`
+they are JSON error objects. Invalid CLI arguments use argparse's standard exit status 2.
+
+These commands open the database read-only and call the same `Knowledge` service as MCP. The older
+`vault prose` command remains available with its existing output. Activate the installed environment
+or invoke its `bin/vault` directly (this deployment uses `/opt/command-vault-mcp/.venv-v2/bin/vault`).
+
+- Use `search_knowledge(query, required_terms=...)` for explanatory evidence. Required terms remain
+  mandatory during fallback; unmatched terms and match mode are exposed. Scores are relative rankings,
+  not confidence. `search_writeup_prose` is a compatibility name for this section-aware search.
+- Follow a result's `reference` with `read_context(reference, offset, max_chars)` to read its source
+  section, including XML/log/fenced text. Follow `next_offset` for more. Source status distinguishes
+  current, changed, unverified, and unavailable content. Images are referenced, not OCR'd.
+- `get_script(script_id, offset, max_chars)` returns exact indexed code in `content`; follow
+  `next_offset` until null to retrieve a complete script. Stored material is never executed.
+- Inventory tools default to 25 results and accept `limit`/`cursor`. `list_tools` excludes entries
+  without writeup commands; `search_history` can still find history-only tools.
+- `suggest_command.context` is explicitly rejected rather than silently ignored. Use explicit
+  filters on search tools. History without execution timestamps reports unknown recency;
+  date-filtered MCP queries fail clearly when all dates are unavailable.
+- MCP startup opens the database read-only. Indexing/enrichment/deletion tools are absent by default;
+  use the CLI, or explicitly set `VAULT_ALLOW_ADMIN=1` for an administrative server profile.
+- Source identity is the canonical path. Schema migration preserves existing IDs. Changed files
+  are detected by content hash and parser version, including with `--add`. Each document import
+  is atomic. Structured collection directories determine source type in unified mode.
+- Rebuilding writeups preserves indexed history. History reimports do not inflate occurrence
+  counts; counts retain the maximum observed per-command multiplicity rather than claiming a
+  complete multi-source execution ledger. Unknown dates stay unknown.
+
+For a full refresh, prefer a candidate database using `scripts/build_candidate.py`, run the test
+suite and retrieval evaluation, then promote the validated candidate. This preserves existing
+records whose source files are unavailable. See [MIGRATION-0.9.md](MIGRATION-0.9.md).
+
 > *"What was that certipy command I used for ESC8?"*
 > *"How did I exploit that shadow credentials thing again?"*
 
@@ -196,7 +282,8 @@ Or in `~/.claude.json` / `.mcp.json`:
 }
 ```
 
-> **Tip:** Set `VAULT_READONLY=1` when using with AI assistants to prevent accidental writes (index, clear_history). The database opens via SQLite's `?mode=ro` URI — no journal/WAL files created, no locks needed. Remove the variable when you need to re-index.
+> The normal MCP profile is read-only. `VAULT_READONLY=1` is a supported legacy override;
+> unset it before explicitly enabling administrative tools with `VAULT_ALLOW_ADMIN=1`.
 
 ### Environment Variables
 
@@ -207,7 +294,7 @@ Or in `~/.claude.json` / `.mcp.json`:
 | `WRITEUPS_BOXES` | Boxes directory (legacy, path-based type detection) | None |
 | `WRITEUPS_CHALLENGES` | Challenges directory (legacy) | None |
 | `WRITEUPS_SHERLOCKS` | Sherlocks directory (legacy) | None |
-| `VAULT_READONLY` | Open database in read-only mode (`1`, `true`, `yes`) | Off |
+| `VAULT_READONLY` | Legacy override: force the MCP read-only profile (`1`, `true`, `yes`), even if admin tools were requested | Off; the normal profile is already read-only |
 
 ### MCP Tools
 
@@ -272,7 +359,8 @@ Tags (`#box`, `#windows`, `#ad`, `#easy`) are extracted and searchable. Prose pa
 - **"vault: command not found"** — Run via `uv run vault` from the project directory, or add `~/.local/bin` to PATH after `pip install -e .`
 - **"No results found"** — Check `vault stats`, run `vault index --rebuild` if counts are 0. Multi-word queries try AND first, then fall back to bm25-ranked OR if AND returns nothing.
 - **MCP not connecting** — Verify paths in MCP config, check `uv` is in PATH, test with `uv run command-vault`
-- **Database errors** — Run `vault maintain --all`. If that fails: `rm ~/.local/share/command-vault/vault.db && vault index --rebuild`
+- **Database errors** — Preserve a SQLite backup before maintenance. Build and validate a separate
+  candidate database if recovery requires reindexing; retain the original for rollback.
 
 ## License
 

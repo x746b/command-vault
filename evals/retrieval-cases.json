@@ -1,0 +1,109 @@
+{
+  "tasks": [
+    {
+      "id": "successful_logon",
+      "need": "Identify the Windows Security event for a successful logon.",
+      "expected": "Event 4624; Security event log.",
+      "reference_ids": [
+        674,
+        21471
+      ],
+      "keyword": "4624 successful logon",
+      "natural": "Which Windows event records a successful user sign-in?"
+    },
+    {
+      "id": "security_log_cleared",
+      "need": "Identify evidence that the Windows Security audit log was cleared.",
+      "expected": "Event 1102 in Security.evtx indicates the audit log was cleared.",
+      "reference_ids": [
+        425,
+        426
+      ],
+      "keyword": "1102 log clear",
+      "natural": "How can I tell when the Windows Security audit log was cleared?"
+    },
+    {
+      "id": "powershell_script_text",
+      "need": "Find which logging artifact preserves PowerShell script text.",
+      "expected": "PowerShell ScriptBlock logging, event 4104.",
+      "reference_ids": [
+        1720,
+        1737,
+        35175
+      ],
+      "keyword": "4104 ScriptBlock",
+      "natural": "Where can I recover the text of PowerShell scripts that ran?"
+    },
+    {
+      "id": "execution_count",
+      "need": "Find an artifact and field indicating how many times a Windows binary executed.",
+      "expected": "Prefetch run count; PECmd is an example parser.",
+      "reference_ids": [
+        243
+      ],
+      "keyword": "prefetch run count",
+      "natural": "How can I find how many times a Windows executable ran?"
+    },
+    {
+      "id": "browser_download_origin",
+      "need": "Find an artifact for investigating a downloaded file's source URL.",
+      "expected": "Chrome History database and download URL records, as demonstrated in the source.",
+      "reference_ids": [
+        1714
+      ],
+      "keyword": "Chrome History downloaded",
+      "natural": "Which browser artifact can show where a downloaded file came from?"
+    },
+    {
+      "id": "linux_failed_logins",
+      "need": "Find a Linux log useful for investigating repeated failed sign-in attempts.",
+      "expected": "The corpus example uses /var/log/auth.log to inspect multiple failed logins; path is distribution-dependent.",
+      "reference_ids": [
+        2561
+      ],
+      "keyword": "auth.log failed login",
+      "natural": "Where should I look for repeated failed SSH sign-in attempts on Linux?"
+    },
+    {
+      "id": "process_parent",
+      "need": "Identify a Windows Security event useful for process creation and parent-process evidence.",
+      "expected": "Security event 4688; examples include process creation and parent process.",
+      "reference_ids": [
+        1725,
+        1747,
+        2527
+      ],
+      "keyword": "4688 process creation parent",
+      "natural": "Which Windows audit event shows a new process and its parent?"
+    },
+    {
+      "id": "file_creation_timeline",
+      "need": "Find NTFS artifacts useful for reconstructing file creation chronology.",
+      "expected": "MFT and USN Journal, including file creation timestamps.",
+      "reference_ids": [
+        2281,
+        2295
+      ],
+      "keyword": "MFT USN file creation timestamps",
+      "natural": "Which filesystem records help reconstruct when files were created on Windows?"
+    }
+  ],
+  "negatives": [
+    {
+      "id": "absent_short_a",
+      "query": "ZQXJ92814"
+    },
+    {
+      "id": "absent_verbose_a",
+      "query": "How do I read audit logs from ZQXJ92814?"
+    },
+    {
+      "id": "absent_short_b",
+      "query": "VORPAL73926"
+    },
+    {
+      "id": "absent_verbose_b",
+      "query": "Where is the browser history database for VORPAL73926?"
+    }
+  ]
+}

@@ -4,6 +4,7 @@ import re
 import sqlite3
 import json
 import logging
+import threading
 from pathlib import Path
 from typing import Optional
 from contextlib import contextmanager
@@ -60,13 +61,15 @@ SCHEMA = """
 -- Writeup sources metadata
 CREATE TABLE IF NOT EXISTS writeups (
     id INTEGER PRIMARY KEY,
-    filename TEXT UNIQUE NOT NULL,
-    filepath TEXT NOT NULL,
+    filename TEXT NOT NULL,
+    filepath TEXT UNIQUE NOT NULL,
     writeup_type TEXT NOT NULL,
     challenge_type TEXT,
     difficulty TEXT,
     title TEXT,
-    indexed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    indexed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    content_hash TEXT,
+    parser_version TEXT
 );
 
 -- Tool categories
@@ -299,21 +302,55 @@ END;
 """
 
 
+class _BatchConnection(sqlite3.Connection):
+    defer_commit = False
+
+    def commit(self):
+        if not self.defer_commit:
+            super().commit()
+
+
 class Database:
     """SQLite database wrapper for Command Vault."""
 
     def __init__(self, db_path: str, readonly: bool = False):
         self.db_path = Path(db_path)
         self.readonly = readonly
-        if not readonly:
+        self._local = threading.local()
+        if readonly:
+            if not self.db_path.is_file():
+                raise FileNotFoundError(f"Vault database not found: {self.db_path}")
+        else:
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
             self._init_db()
 
     def _init_db(self):
         """Initialize database schema."""
         with self._get_connection() as conn:
+            version = conn.execute('PRAGMA user_version').fetchone()[0]
+            if version > 1:
+                raise ValueError(f"Unsupported database schema version: {version}")
+            exists = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='writeups'").fetchone()
+            if exists and version == 0:
+                # Preserve IDs and child references; only source identity changes.
+                conn.executescript('''
+                    BEGIN;
+                    CREATE TABLE writeups_v1 (
+                        id INTEGER PRIMARY KEY, filename TEXT NOT NULL,
+                        filepath TEXT UNIQUE NOT NULL, writeup_type TEXT NOT NULL,
+                        challenge_type TEXT, difficulty TEXT, title TEXT,
+                        indexed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        content_hash TEXT, parser_version TEXT);
+                    INSERT INTO writeups_v1
+                        (id,filename,filepath,writeup_type,challenge_type,difficulty,title,indexed_at)
+                        SELECT id,filename,filepath,writeup_type,challenge_type,difficulty,title,indexed_at FROM writeups;
+                    DROP TABLE writeups;
+                    ALTER TABLE writeups_v1 RENAME TO writeups;
+                    COMMIT;
+                ''')
             conn.executescript(SCHEMA)
             conn.executescript(FTS_SCHEMA)
+            conn.execute('PRAGMA user_version=1')
             self._seed_categories(conn)
             conn.commit()
 
@@ -328,15 +365,75 @@ class Database:
     @contextmanager
     def _get_connection(self):
         """Get database connection with row factory."""
-        if self.readonly:
-            conn = sqlite3.connect(f"file:{self.db_path}?mode=ro", uri=True)
-        else:
-            conn = sqlite3.connect(self.db_path)
+        active = getattr(self._local, 'connection', None)
+        if active is not None:
+            yield active
+            return
+        conn = sqlite3.connect(self.db_path.resolve().as_uri() + ('?mode=ro' if self.readonly else '?mode=rwc'),
+                               uri=True, timeout=30, factory=_BatchConnection)
         conn.row_factory = sqlite3.Row
+        if self.readonly:
+            conn.execute('PRAGMA query_only=ON')
         try:
             yield conn
         finally:
             conn.close()
+
+    @contextmanager
+    def read_snapshot(self):
+        """Share a consistent read transaction across retrieval helpers in this thread."""
+        if getattr(self._local, 'connection', None) is not None:
+            yield
+            return
+        with self._get_connection() as conn:
+            conn.execute('BEGIN')
+            self._local.connection = conn
+            try:
+                yield
+            finally:
+                conn.rollback()
+                self._local.connection = None
+
+    @contextmanager
+    def transaction(self):
+        """One atomic transaction per document/history import, local to this thread."""
+        if getattr(self._local, 'connection', None) is not None:
+            yield
+            return
+        with self._get_connection() as conn:
+            conn.execute('BEGIN IMMEDIATE')
+            conn.defer_commit = True
+            self._local.connection = conn
+            try:
+                yield
+                conn.defer_commit = False
+                conn.commit()
+            except BaseException:
+                conn.rollback()
+                raise
+            finally:
+                conn.defer_commit = False
+                self._local.connection = None
+
+    def source_fingerprint(self, filepath: str):
+        with self._get_connection() as conn:
+            row = conn.execute('SELECT content_hash,parser_version FROM writeups WHERE filepath=?',
+                               (str(Path(filepath).resolve()),)).fetchone()
+            return tuple(row) if row else None
+
+    def set_source_fingerprint(self, writeup_id: int, digest: str, parser_version: str):
+        with self._get_connection() as conn:
+            conn.execute('UPDATE writeups SET content_hash=?,parser_version=? WHERE id=?',
+                         (digest, parser_version, writeup_id))
+            conn.commit()
+
+    def clear_writeups(self):
+        """Rebuild writeup content without deleting shell history or its tools."""
+        with self.transaction():
+            with self._get_connection() as conn:
+                for table in ('command_tags','commands','scripts','writeup_chunks',
+                              'technique_writeups','writeup_tags','writeups'):
+                    conn.execute(f'DELETE FROM {table}')
 
     def reset(self):
         """Drop all tables and recreate schema."""
@@ -376,39 +473,41 @@ class Database:
                 """INSERT INTO writeups
                    (filename, filepath, writeup_type, challenge_type, difficulty, title)
                    VALUES (?, ?, ?, ?, ?, ?)
-                   ON CONFLICT(filename) DO UPDATE SET
-                   filepath=excluded.filepath,
+                   ON CONFLICT(filepath) DO UPDATE SET
+                   filename=excluded.filename,
                    writeup_type=excluded.writeup_type,
                    challenge_type=excluded.challenge_type,
                    difficulty=excluded.difficulty,
                    title=excluded.title,
                    indexed_at=CURRENT_TIMESTAMP""",
-                (writeup.filename, writeup.filepath, writeup.writeup_type.value,
+                (writeup.filename, str(Path(writeup.filepath).resolve()), writeup.writeup_type.value,
                  writeup.challenge_type, writeup.difficulty, writeup.title)
             )
             conn.commit()
 
             # Get the ID (either inserted or existing)
             row = conn.execute(
-                "SELECT id FROM writeups WHERE filename = ?",
-                (writeup.filename,)
+                "SELECT id FROM writeups WHERE filepath = ?",
+                (str(Path(writeup.filepath).resolve()),)
             ).fetchone()
             writeup_id = row['id']
 
             # Handle tags
-            if writeup.tags:
-                self._set_writeup_tags(conn, writeup_id, writeup.tags)
-                conn.commit()
+            self._set_writeup_tags(conn, writeup_id, writeup.tags)
+            conn.commit()
 
             return writeup_id
 
     def get_writeup_by_filename(self, filename: str) -> Optional[Writeup]:
         """Get writeup by filename."""
         with self._get_connection() as conn:
-            row = conn.execute(
+            rows = conn.execute(
                 "SELECT * FROM writeups WHERE filename = ?",
                 (filename,)
-            ).fetchone()
+            ).fetchall()
+            if len(rows) > 1:
+                raise ValueError('Ambiguous filename; use read_context with a search reference instead')
+            row = rows[0] if rows else None
 
             if not row:
                 return None
@@ -512,7 +611,7 @@ class Database:
     ) -> list[CommandResult]:
         """Search commands with AND-first, ranked-OR-fallback for FTS."""
         with self._get_connection() as conn:
-            def _build_cmd_query(fts_query: Optional[str], rank: bool = False):
+            def _build_cmd_query(fts_query: Optional[str], rank: bool = True):
                 params = []
                 where_clauses = []
 
@@ -554,7 +653,7 @@ class Database:
                     where_clauses.append("w.challenge_type = ?")
                     params.append(challenge_type)
                 if tags:
-                    tag_list = [t.lower() for t in tags]
+                    tag_list = sorted({t.lower().lstrip('#') for t in tags})
                     placeholders = ','.join('?' * len(tag_list))
                     where_clauses.append(f"""
                         w.id IN (
@@ -572,10 +671,10 @@ class Database:
                     joiner = " AND " if fts_query else " WHERE "
                     base_query += joiner + " AND ".join(where_clauses)
 
-                if rank:
-                    base_query += " ORDER BY bm25(commands_fts)"
+                if rank and fts_query:
+                    base_query += " ORDER BY bm25(commands_fts, 10.0, 2.0, 0.2), c.id"
                 base_query += " LIMIT ?"
-                params.append(int(limit))
+                params.append(max(1, min(int(limit), 100)))
                 return base_query, params
 
             # Try AND first (precise)
@@ -583,9 +682,11 @@ class Database:
                 _build_fts_query(query) if query else None
             )
             rows = conn.execute(and_q, and_p).fetchall()
+            match_mode = 'all_terms' if query else 'filtered'
 
             # Fallback to ranked OR if AND returned nothing and query is multi-word
             if not rows and query and len(_tokenize_fts(query)) > 1:
+                match_mode = 'any_terms'
                 or_q, or_p = _build_cmd_query(
                     _build_fts_query_or(query), rank=True
                 )
@@ -594,6 +695,7 @@ class Database:
             return [
                 CommandResult(
                     id=row['id'],
+                    match_mode=match_mode,
                     tool=row['tool_name'],
                     raw_command=row['raw_command'],
                     template=row['command_template'],
@@ -636,7 +738,7 @@ class Database:
     ) -> list[ScriptResult]:
         """Search scripts with AND-first, ranked-OR-fallback for FTS."""
         with self._get_connection() as conn:
-            def _build_script_query(fts_query: Optional[str], rank: bool = False):
+            def _build_script_query(fts_query: Optional[str], rank: bool = True):
                 params = []
                 where_clauses = []
 
@@ -659,8 +761,10 @@ class Database:
                     """
 
                 if language:
-                    where_clauses.append("s.language = ?")
-                    params.append(language)
+                    canonical = {'py': 'python', 'js': 'javascript', 'ps1': 'powershell'}.get(language.lower(), language.lower())
+                    aliases = {'python': ('python', 'py'), 'javascript': ('javascript', 'js'), 'powershell': ('powershell', 'ps1')}.get(canonical, (canonical,))
+                    where_clauses.append('s.language IN (' + ','.join('?' for _ in aliases) + ')')
+                    params.extend(aliases)
                 if library:
                     where_clauses.append("s.libraries_used LIKE ? ESCAPE '\\'")
                     escaped_lib = library.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
@@ -673,10 +777,10 @@ class Database:
                     joiner = " AND " if fts_query else " WHERE "
                     base_query += joiner + " AND ".join(where_clauses)
 
-                if rank:
+                if rank and fts_query:
                     base_query += " ORDER BY bm25(scripts_fts)"
                 base_query += " LIMIT ?"
-                params.append(int(limit))
+                params.append(max(1, min(int(limit), 100)))
                 return base_query, params
 
             # Try AND first (precise)
@@ -684,9 +788,11 @@ class Database:
                 _build_fts_query(query) if query else None
             )
             rows = conn.execute(and_q, and_p).fetchall()
+            match_mode = 'all_terms' if query else 'filtered'
 
             # Fallback to ranked OR if AND returned nothing and query is multi-word
             if not rows and query and len(_tokenize_fts(query)) > 1:
+                match_mode = 'any_terms'
                 or_q, or_p = _build_script_query(
                     _build_fts_query_or(query), rank=True
                 )
@@ -703,6 +809,7 @@ class Database:
 
                 results.append(ScriptResult(
                     id=row['id'],
+                    match_mode=match_mode,
                     language=row['language'],
                     purpose=row['purpose'],
                     libraries=libraries,
@@ -1079,7 +1186,7 @@ class Database:
         so the most relevant matches surface to the top.
         """
         with self._get_connection() as conn:
-            def _build_chunk_query(fts_query: str, rank: bool = False):
+            def _build_chunk_query(fts_query: str, rank: bool = True):
                 params = []
                 base_query = """
                     SELECT ch.id, ch.section, ch.content,
@@ -1096,7 +1203,7 @@ class Database:
                     params.append(writeup_type)
 
                 if tags:
-                    tag_list = [t.lower() for t in tags]
+                    tag_list = sorted({t.lower().lstrip('#') for t in tags})
                     placeholders = ','.join('?' * len(tag_list))
                     base_query += f"""
                         AND w.id IN (
@@ -1113,7 +1220,7 @@ class Database:
                 if rank:
                     base_query += " ORDER BY bm25(writeup_chunks_fts)"
                 base_query += " LIMIT ?"
-                params.append(int(limit))
+                params.append(max(1, min(int(limit), 100)))
                 return base_query, params
 
             # Try AND first (precise)
@@ -1199,7 +1306,7 @@ class Database:
 
             # Get writeups for this technique
             rows = conn.execute("""
-                SELECT w.id as writeup_id, w.filename, w.title, w.writeup_type, w.difficulty
+                SELECT w.id as writeup_id, w.filename, w.title, w.writeup_type, w.difficulty, w.content_hash
                 FROM technique_writeups tw
                 JOIN writeups w ON tw.writeup_id = w.id
                 WHERE tw.technique_id = ?
@@ -1221,6 +1328,8 @@ class Database:
                 tags = self._get_writeup_tags(conn, row['writeup_id'])
 
                 writeups.append({
+                    'document_id': row['writeup_id'],
+                    'revision': row['content_hash'],
                     'filename': row['filename'],
                     'title': row['title'],
                     'type': row['writeup_type'],
@@ -1277,7 +1386,9 @@ class Database:
         tool_id: Optional[int],
         timestamp: Optional[str],
         source_file: str,
-        shell_type: str = 'zsh'
+        shell_type: str = 'zsh',
+        occurrence_count: int = 1,
+        first_timestamp: Optional[str] = None
     ) -> tuple[int, bool]:
         """
         Insert a history command or update if exists.
@@ -1287,6 +1398,7 @@ class Database:
         """
         with self._get_connection() as conn:
             # Check if exists
+            first_timestamp = first_timestamp or timestamp
             existing = conn.execute(
                 "SELECT id, occurrence_count FROM history_commands WHERE command_hash = ?",
                 (command_hash,)
@@ -1296,10 +1408,11 @@ class Database:
                 # Update occurrence count and last_seen
                 conn.execute(
                     """UPDATE history_commands
-                       SET occurrence_count = occurrence_count + 1,
-                           last_seen = COALESCE(?, last_seen)
+                       SET occurrence_count = MAX(occurrence_count, ?),
+                           first_seen = CASE WHEN first_seen IS NULL THEN ? WHEN ? IS NULL THEN first_seen ELSE MIN(first_seen, ?) END,
+                           last_seen = CASE WHEN last_seen IS NULL THEN ? WHEN ? IS NULL THEN last_seen ELSE MAX(last_seen, ?) END
                        WHERE id = ?""",
-                    (timestamp, existing['id'])
+                    (occurrence_count, first_timestamp, first_timestamp, first_timestamp, timestamp, timestamp, timestamp, existing['id'])
                 )
                 conn.commit()
                 return existing['id'], False
@@ -1309,9 +1422,9 @@ class Database:
                 """INSERT INTO history_commands
                    (command_hash, raw_command, sanitized_command, command_template,
                     tool_id, first_seen, last_seen, occurrence_count, source_file, shell_type)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (command_hash, raw_command, sanitized_command, command_template,
-                 tool_id, timestamp, timestamp, source_file, shell_type)
+                 tool_id, first_timestamp, timestamp, occurrence_count, source_file, shell_type)
             )
             conn.commit()
             return cursor.lastrowid, True
@@ -1354,7 +1467,7 @@ class Database:
                     escaped_tool = tool.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
                     params.append(f"%{escaped_tool}%")
                 if since:
-                    where_clauses.append("h.first_seen >= ?")
+                    where_clauses.append("julianday(h.last_seen) >= julianday(?)")
                     params.append(since)
 
                 if where_clauses:
@@ -1366,7 +1479,7 @@ class Database:
                 else:
                     base_query += " ORDER BY h.last_seen DESC"
                 base_query += " LIMIT ?"
-                params.append(int(limit))
+                params.append(max(1, min(int(limit), 100)))
                 return base_query, params
 
             # Try AND first (precise)
