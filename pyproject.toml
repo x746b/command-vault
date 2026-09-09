@@ -20,6 +20,9 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/command_vault"]
 
+[tool.hatch.build.targets.sdist]
+exclude = ["/.claude"]
+
 [dependency-groups]
 dev = [
     "pytest>=8.0",

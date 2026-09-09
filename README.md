@@ -20,7 +20,7 @@ Command Vault indexes **commands**, **scripts**, and **prose** from your penetra
 ## Installation
 
 Requires Python 3.11+. [uv](https://docs.astral.sh/uv/guides/projects/) is recommended for the source
-installation; it is not required by the installed runtime. To use the features documented here:
+installation; it is not required by the installed runtime. To install from source:
 
 ~~~bash
 git clone https://github.com/x746b/command-vault.git
@@ -32,10 +32,14 @@ source .venv/bin/activate
 If an existing checkout uses `.venv-v2`, use `UV_PROJECT_ENVIRONMENT=.venv-v2 uv sync --frozen` and
 activate `.venv-v2/bin/activate` instead. The examples below assume the selected environment is active.
 
-The [PyPI package](https://pypi.org/project/command-vault-mcp/) is published separately from GitHub.
-As checked on 2026-09-09, PyPI provides **0.8.0**; use the source installation for **0.9.1**.
-`python -m pip install command-vault-mcp` in an activated environment installs the published PyPI
-package, which may not match this README.
+Alternatively, install the [PyPI release](https://pypi.org/project/command-vault-mcp/0.9.1/)
+in an activated, pip-enabled virtual environment:
+
+```bash
+python -m pip install "command-vault-mcp==0.9.1"
+```
+
+PyPI and GitHub releases are published separately; pin a version when you need reproducible installation.
 
 ## Quick Start
 
