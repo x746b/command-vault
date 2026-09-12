@@ -388,9 +388,19 @@ External IDs and document identities must remain stable.
 
 | Task | Model | Objective | Owned files | Forbidden actions | Tests/status |
 |---|---|---|---|---|---|
-| syzbot/nofuzz diagnostics | `gpt-5.6-terra` | Emit 177 diagnostic bundles; syzbot C/syz only are non-executed scripts | dedicated adapter/wrapper/tests | V8, nofuzz PoC, Makefile/binary/image, execution, network, DB/production, delegation | pending assignment |
+| syzbot/nofuzz diagnostics | `gpt-5.6-terra` | Emit 177 diagnostic bundles; syzbot C/syz only are non-executed scripts | dedicated adapter/wrapper/tests | V8, nofuzz PoC, Makefile/binary/image, execution, network, DB/production, delegation | complete; 11 focused and 1,120 full before Daybreak integration |
 | CyberGym enrichment | `gpt-5.6-terra` | Rebuild 1,507 bundles, enriching exactly 484 stable identities | dedicated enricher/wrapper/tests | duplicate identities, overwrites, source-field replacement, execution/network/DB/production, delegation | pending assignment |
 | syz retrieval allowlist | `gpt-daybreak-blue-latest` | Extend explicit research script indexing from C to C+syz | `research_indexer.py`, focused indexer test | no execution, no arbitrary language import, no schema/live DB changes | complete; 59 focused tests |
+
+Daybreak real-source review corrected nofuzz field locations, lowercase
+sanitizer spelling, patch filename handling, aggregate-only reporting, explicit
+years, and exact kernel title aliases. The final focused diagnostics suite
+passes 15 tests. Real normalization produced 177 bundles and 839 artifacts:
+159 C reproducers, 159 syzlang reproducers, 159 descriptions, 159 traces, 131
+syzbot patches, and 72 nofuzz diagnostic files. All artifact licenses are null;
+no selected path is a Makefile, nofuzz PoC, image, binary, or V8 file. The
+normalized bundle tree SHA-256 is
+`c46ca244ef7426b3e87d40f7ca85faa3e481a91dcdc18a50653c8f871aacbc0f`.
 
 ## Acceptance notes
 
