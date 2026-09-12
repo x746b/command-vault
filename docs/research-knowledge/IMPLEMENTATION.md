@@ -400,7 +400,11 @@ passes 15 tests. Real normalization produced 177 bundles and 839 artifacts:
 syzbot patches, and 72 nofuzz diagnostic files. All artifact licenses are null;
 no selected path is a Makefile, nofuzz PoC, image, binary, or V8 file. The
 normalized bundle tree SHA-256 is
-`c46ca244ef7426b3e87d40f7ca85faa3e481a91dcdc18a50653c8f871aacbc0f`.
+`81c0630df7c54bbe66a9a9ac57efb7aba46081253afd02968022d9bcbd0c3687`.
+Cross-source integration aligned the existing kernel/CyberGym stage
+descriptions and deterministic aliases while retaining per-record validation;
+the diagnostics-only candidate reached integrity `ok` with no foreign-key or
+stage conflicts.
 
 ## Acceptance notes
 
