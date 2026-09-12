@@ -314,7 +314,8 @@ services/config changes, Docker, and unapproved project dependencies.
 | Task | Objective | Owned files | Required tests/acceptance | Status |
 |---|---|---|---|---|
 | Run-artifact preparation (superseded) | Earlier proposed selected-run extraction | No files produced | Scope review | interrupted and removed; no code or data retained |
-| Repository-only methodology adapter | Statically parse pinned repository metadata and emit one methodology plus 41 target bundles with zero artifacts | ExploitBench adapter/export/wrapper and focused tests | AST/YAML non-execution; exact 41/16 counts; null CVE; dates/versions/unknown temporal status; source-only provenance; zero scripts/run fields; malformed input refusal | pending assignment |
+| Repository-only adapter (time-boxed) | Statically parse pinned repository metadata and emit one methodology plus 41 target bundles with zero artifacts | Planned adapter/export/wrapper and focused tests | AST/YAML non-execution; exact 41/16 counts; source-only provenance | interrupted after no filesystem/test checkpoint; no files produced |
+| Static target parser | Parse literal target/depot declarations without importing or executing source | `src/command_vault/adapters/exploitbench.py`, `tests/test_exploitbench_adapter.py` | frozen records; CVE-null/year/version/temporal fields; dynamic AST/control/hash/identity/duplicate refusal; source-free errors | complete; 42 focused tests |
 
 ## Acceptance notes
 
