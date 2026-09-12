@@ -291,7 +291,7 @@ class ResearchIndexer:
                     (writeup_id,chunk_id,stage_id,evidence_role,assertion_provenance,validation_status,source_anchor_hash)
                     VALUES (?,?,?,?,?,?,?)''',
                     (writeup_id, chunk_id, stage_id, roles[stage.stage_class], stage.assertion_provenance,
-                     'source_documented', hashlib.sha256(chunk['content'].encode('utf-8')).hexdigest()))
+                     stage.validation_status, hashlib.sha256(chunk['content'].encode('utf-8')).hexdigest()))
                 linked_chunks.add(key)
                 linked_stages.add(stage_id)
         return len(linked_stages), len(linked_chunks)

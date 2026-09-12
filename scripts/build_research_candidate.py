@@ -1,6 +1,8 @@
 """Create a separate research candidate through SQLite backup and validated import."""
 
 import argparse
+from collections import Counter
+from collections.abc import Sequence
 from contextlib import closing
 from dataclasses import asdict
 import hashlib
@@ -34,14 +36,24 @@ def _integrity(connection):
     return 'ok'
 
 
-def build_candidate(baseline: Path, candidate: Path, bundles: Path, managed_root: Path | None = None) -> dict:
+def build_candidate(baseline: Path, candidate: Path, bundles: Path | Sequence[Path], managed_root: Path | None = None) -> dict:
     baseline = Path(baseline).absolute()
     candidate = Path(candidate).absolute()
-    bundles = Path(bundles)
+    if isinstance(bundles, (str, os.PathLike)):
+        bundles = [bundles]
+    elif not isinstance(bundles, Sequence) or not bundles:
+        raise ValueError('Supply at least one bundle collection directory')
+    collection_roots = []
+    for collection in bundles:
+        if not isinstance(collection, (str, os.PathLike)):
+            raise ValueError('Bundle collections must be directory paths')
+        collection_root = ResearchIndexer._managed_directory(collection)
+        if collection_root in collection_roots:
+            raise ValueError('Duplicate canonical bundle collection directory')
+        collection_roots.append(collection_root)
     if managed_root is not None:
         managed_root = ResearchIndexer._managed_directory(managed_root)
-        collection_root = ResearchIndexer._managed_directory(bundles)
-        if not collection_root.is_relative_to(managed_root):
+        if any(not root.is_relative_to(managed_root) for root in collection_roots):
             raise ValueError('Bundles must be under the managed root')
     if baseline.is_symlink() or not baseline.is_file():
         raise ValueError('Baseline must be an existing nonsymlink regular file')
@@ -69,7 +81,13 @@ def build_candidate(baseline: Path, candidate: Path, bundles: Path, managed_root
             finally:
                 os.close(descriptor)
         db = Database(str(candidate))
-        result = ResearchIndexer(db, managed_root=managed_root).index_directory(bundles)
+        indexer = ResearchIndexer(db, managed_root=managed_root)
+        totals, redactions = Counter(), Counter()
+        for collection_root in collection_roots:
+            result = asdict(indexer.index_directory(collection_root))
+            redactions.update(result.pop('redactions_by_type'))
+            totals.update(result)
+        index_report = {**totals, 'redactions_by_type': dict(sorted(redactions.items()))}
         with closing(sqlite3.connect(candidate.as_uri() + '?mode=ro', uri=True)) as connection:
             connection.execute('PRAGMA query_only=ON')
             integrity = _integrity(connection)
@@ -84,7 +102,8 @@ def build_candidate(baseline: Path, candidate: Path, bundles: Path, managed_root
             'baseline_sha256': baseline_hash, 'baseline_bytes': baseline_size,
             'candidate_sha256': candidate_hash, 'candidate_bytes': candidate_size,
             'schema_version': version, 'integrity_check': integrity,
-            'foreign_key_violations': violations, 'index': asdict(result),
+            'foreign_key_violations': violations, 'index': index_report,
+            'collections': len(collection_roots),
             'stats': db.get_stats().model_dump(),
         }
     finally:
@@ -96,7 +115,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--baseline', type=Path, required=True)
     parser.add_argument('--candidate', type=Path, required=True)
-    parser.add_argument('--bundles', type=Path, required=True)
+    parser.add_argument('--bundles', type=Path, action='append', required=True)
     parser.add_argument('--managed-root', type=Path, help='Existing managed root containing normalized bundles')
     args = parser.parse_args(argv)
     try:

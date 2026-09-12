@@ -216,6 +216,10 @@
         "assertion_provenance": {
           "$ref": "#/$defs/AssertionProvenance"
         },
+        "validation_status": {
+          "$ref": "#/$defs/ValidationStatus",
+          "default": "source_documented"
+        },
         "description": {
           "anyOf": [
             {

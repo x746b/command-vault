@@ -59,6 +59,7 @@ def test_build_migrates_imports_reports_and_preserves_baseline(builder, inputs):
     assert report['candidate_sha256'] == hashlib.sha256(candidate.read_bytes()).hexdigest()
     assert report['candidate_bytes'] == candidate.stat().st_size
     assert report['schema_version'] == 2
+    assert report['collections'] == 1
     assert report['integrity_check'] == 'ok'
     assert report['foreign_key_violations'] == 0
     assert report['index']['documents_indexed'] == report['index']['bundles_seen'] == 1
@@ -279,3 +280,100 @@ def test_managed_root_outside_bundles_is_rejected_before_candidate_creation(buil
         builder.build_candidate(baseline, candidate, bundles, managed_root=managed)
     assert not candidate.exists()
     assert baseline.read_bytes() == before
+
+
+def second_collection(first):
+    collection = first.parent / 'second-source'
+    bundle = collection / 'second'
+    bundle.mkdir(parents=True)
+    manifest = json.loads((first / 'one/manifest.json').read_text())
+    manifest['source']['name'] = 'Second Fixture'
+    manifest['external_id'] = 'two'
+    (bundle / 'manifest.json').write_text(json.dumps(manifest))
+    (bundle / 'document.md').write_text('# Notes\n\n## Second observation\nA separate orchard source has independent retained content.\n')
+    return collection
+
+
+def test_multiple_collections_aggregate_all_counts_in_supplied_order_and_migrate_once(builder, inputs, monkeypatch):
+    baseline, candidate, first = inputs
+    second = second_collection(first)
+    for document in (first / 'one/document.md', second / 'second/document.md'):
+        document.write_text(document.read_text() + '\nHTB{aggregate_fixture_redaction}\n')
+    before, before_mode = baseline.read_bytes(), stat.S_IMODE(baseline.stat().st_mode)
+    constructors = []
+    original = builder.Database
+
+    def observed(path, *args, **kwargs):
+        constructors.append(path)
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr(builder, 'Database', observed)
+    report = builder.build_candidate(baseline, candidate, [second, first], managed_root=first.parent)
+    assert constructors == [str(candidate)]
+    assert report['collections'] == 2
+    assert report['index']['bundles_seen'] == report['index']['documents_indexed'] == 2
+    assert report['index']['chunks_indexed'] == report['index']['vulnerabilities_indexed'] == 2
+    assert report['index']['redactions_by_type'] == {'flag': 2}
+    for field in ('scripts_indexed', 'stages_linked', 'evidence_links', 'validation_records', 'mitigations_indexed', 'mitigation_links'):
+        assert report['index'][field] == 0
+    assert report['stats']['research']['source_collections'] == 2
+    assert report['stats']['research']['by_source'] == {'Fixture': 1, 'Second Fixture': 1}
+    assert report['stats']['writeups']['research'] == 2
+    assert report['integrity_check'] == 'ok' and report['foreign_key_violations'] == 0
+    assert baseline.read_bytes() == before and stat.S_IMODE(baseline.stat().st_mode) == before_mode
+    assert report['baseline_sha256'] == hashlib.sha256(before).hexdigest()
+    assert str(first.parent) not in json.dumps(report) and 'aggregate_fixture_redaction' not in json.dumps(report)
+    with sqlite3.connect(candidate) as conn:
+        assert conn.execute('SELECT external_id FROM writeups WHERE writeup_type=? ORDER BY id', ('research',)).fetchall() == [('two',), ('one',)]
+
+
+def test_cli_repeatable_bundles_and_single_collection_sequence_compatibility(builder, inputs, capsys):
+    baseline, candidate, first = inputs
+    second = second_collection(first)
+    report = builder.main(['--baseline', str(baseline), '--candidate', str(candidate),
+                           '--bundles', str(first), '--bundles', str(second)])
+    assert report['collections'] == 2
+    assert json.loads(capsys.readouterr().out) == report
+    single = builder.build_candidate(baseline, candidate.with_name('single.db'), (first,))
+    assert single['collections'] == 1 and single['index']['documents_indexed'] == 1
+
+
+@pytest.mark.parametrize('case', ['empty', 'duplicate', 'canonical_duplicate', 'outside', 'missing', 'symlink'])
+def test_invalid_collection_selection_fails_before_candidate_reservation(builder, inputs, case):
+    baseline, candidate, first = inputs
+    before = baseline.read_bytes()
+    managed_root = first
+    if case == 'empty':
+        collections = []
+    elif case == 'duplicate':
+        collections = [first, first]
+    elif case == 'canonical_duplicate':
+        collections = [first, first / 'one' / '..']
+    elif case == 'outside':
+        collections = [first, second_collection(first)]
+    elif case == 'missing':
+        collections = [first, first.parent / 'missing']
+    else:
+        linked = first.parent / 'linked'
+        linked.symlink_to(first, target_is_directory=True)
+        collections = [first, linked]
+    with pytest.raises(ValueError):
+        builder.build_candidate(baseline, candidate, collections, managed_root=managed_root)
+    assert not candidate.exists()
+    assert baseline.read_bytes() == before
+
+
+def test_later_collection_failure_preserves_first_committed_collection(builder, inputs):
+    baseline, candidate, first = inputs
+    second = second_collection(first)
+    (second / 'second/manifest.json').write_text('{invalid second collection')
+    before, before_mode = baseline.read_bytes(), stat.S_IMODE(baseline.stat().st_mode)
+    with pytest.raises(ValueError, match='Manifest'):
+        builder.build_candidate(baseline, candidate, [first, second], managed_root=first.parent)
+    assert candidate.is_file() and stat.S_IMODE(candidate.stat().st_mode) == 0o600
+    assert baseline.read_bytes() == before and stat.S_IMODE(baseline.stat().st_mode) == before_mode
+    with sqlite3.connect(candidate) as conn:
+        assert conn.execute('SELECT external_id FROM writeups WHERE writeup_type=?', ('research',)).fetchall() == [('one',)]
+        assert conn.execute('SELECT name FROM source_collections').fetchall() == [('Fixture',)]
+        assert conn.execute('PRAGMA integrity_check').fetchone()[0] == 'ok'
+        assert conn.execute('PRAGMA foreign_key_check').fetchall() == []

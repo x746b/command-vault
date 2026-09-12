@@ -87,6 +87,9 @@ def test_valid_bundle_facts_stages_hashes_and_no_inference(dataset, tmp_path):
         ('crash diagnosis', 'diagnose', ['Runtime evidence']), ('remediation', 'remediation', ['Patch']),
     ]
     assert all(stage.assertion_provenance.value == 'deterministic' for stage in manifest.operational_stages)
+    assert [stage.validation_status.value for stage in manifest.operational_stages] == [
+        'harness_observed', 'harness_observed', 'source_documented',
+    ]
     headings = ['## Source metadata', '## Description', '## Derived error facts', '## Runtime evidence', '## Patch facts', '## Patch\n']
     assert [loaded.document.index(heading) for heading in headings] == sorted(loaded.document.index(heading) for heading in headings)
     with pytest.raises(FrozenInstanceError):

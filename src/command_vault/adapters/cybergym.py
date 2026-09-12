@@ -224,7 +224,8 @@ class CyberGymAdapter(ExploitGymKernelCTFAdapter):
         upstream_url = f'{_DATASET_URL}/tree/{self.revision}/{source_path}'
         stages = [
             {'canonical_name': name, 'stage_class': stage_class, 'assertion_provenance': 'deterministic',
-             'matched_alias': section, 'evidence_sections': [section]}
+             'matched_alias': section, 'evidence_sections': [section],
+             'validation_status': 'harness_observed' if section == 'Runtime evidence' else 'source_documented'}
             for name, stage_class, section in (
                 ('crash reproduction', 'trigger', 'Runtime evidence'),
                 ('crash diagnosis', 'diagnose', 'Runtime evidence'), ('remediation', 'remediation', 'Patch'),

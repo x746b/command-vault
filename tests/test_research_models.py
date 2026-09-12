@@ -86,6 +86,7 @@ def test_illustrative_manifest_round_trip(manifest_data):
         "operational_stages": [{
             "canonical_name": "analysis", "stage_class": "diagnose",
             "assertion_provenance": "deterministic", "description": "A mapped heading.",
+            "validation_status": "source_documented",
             "matched_alias": "Analysis", "evidence_sections": ["Overview", "Analysis"],
         }],
     })
@@ -306,6 +307,25 @@ def test_operational_stage_requires_assertion_provenance(stage_data):
     del stage_data["assertion_provenance"]
     with pytest.raises(ValidationError, match="assertion_provenance"):
         ResearchOperationalStage(**stage_data)
+
+
+def test_operational_stage_validation_default_round_trip_and_schema(stage_data, manifest_data):
+    stage = ResearchOperationalStage(**stage_data)
+    assert stage.validation_status is ValidationStatus.SOURCE_DOCUMENTED
+    assert stage.model_dump(mode='json')['validation_status'] == 'source_documented'
+    manifest = ResearchManifest(**manifest_data, operational_stages=[{**stage_data, 'validation_status': 'harness_observed'}])
+    restored = ResearchManifest.model_validate_json(manifest.model_dump_json())
+    assert restored.operational_stages[0].validation_status is ValidationStatus.HARNESS_OBSERVED
+    schema = json.loads(SCHEMA_PATH.read_text())
+    assert schema['$defs']['ResearchOperationalStage']['properties']['validation_status'] == {
+        '$ref': '#/$defs/ValidationStatus', 'default': 'source_documented',
+    }
+
+
+@pytest.mark.parametrize('value', ['invented-success', None, 1])
+def test_operational_stage_invalid_validation_status(stage_data, value):
+    with pytest.raises(ValidationError, match='validation_status'):
+        ResearchOperationalStage(**stage_data, validation_status=value)
 
 
 @pytest.mark.parametrize("overrides", [{}, {"description": "Different description"}, {"evidence_sections": ["Different"]}, {"stage_class": "objective"}])

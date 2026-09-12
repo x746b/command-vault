@@ -193,6 +193,7 @@ class ResearchOperationalStage(_ResearchContract):
     canonical_name: str = Field(min_length=1)
     stage_class: OperationalStageClass
     assertion_provenance: AssertionProvenance
+    validation_status: ValidationStatus = ValidationStatus.SOURCE_DOCUMENTED
     description: Optional[str] = None
     matched_alias: str = Field(min_length=1)
     evidence_sections: list[Annotated[str, Field(min_length=1)]] = Field(

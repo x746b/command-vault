@@ -730,6 +730,31 @@ def test_artifact_reindex_rebuilds_evidence_without_orphans_and_preserves_stages
         assert conn.execute('PRAGMA foreign_key_check').fetchall() == []
 
 
+def test_stage_validation_status_is_manifest_backed_and_idempotent_without_chunk_validations(db, artifact_bundle):
+    root, manifest, _ = artifact_bundle
+    for stage in manifest['operational_stages']:
+        if stage['stage_class'] in ('trigger', 'diagnose'):
+            stage['validation_status'] = 'harness_observed'
+    write_manifest(root, manifest)
+    indexer = ResearchIndexer(db)
+    first = indexer.index_bundle(root)
+    second = indexer.index_bundle(root)
+    assert first == second
+    assert first.validation_records == 1  # Only the existing C artifact has a validation record.
+    with db._get_connection() as conn:
+        rows = conn.execute('''SELECT s.stage_class,e.validation_status,e.assertion_provenance
+            FROM evidence_links e JOIN operational_stages s ON s.id=e.stage_id
+            WHERE e.chunk_id IS NOT NULL ORDER BY s.id''').fetchall()
+        assert len(rows) == 7
+        for row in rows:
+            expected = 'harness_observed' if row['stage_class'] in ('trigger', 'diagnose') else 'source_documented'
+            assert row['validation_status'] == expected
+            assert row['assertion_provenance'] == 'deterministic'
+        assert conn.execute('SELECT COUNT(*) FROM validation_records').fetchone()[0] == 1
+        assert conn.execute('SELECT COUNT(*) FROM validation_records WHERE artifact_kind=?', ('chunk',)).fetchone()[0] == 0
+        assert conn.execute('PRAGMA foreign_key_check').fetchall() == []
+
+
 @pytest.mark.parametrize('case', ['class', 'description', 'provenance', 'empty-alias'])
 def test_stage_conflicts_roll_back_script_validation_and_previous_state(db, artifact_bundle, case):
     root, manifest, _ = artifact_bundle
