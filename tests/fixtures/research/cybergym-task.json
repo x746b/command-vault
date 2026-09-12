@@ -1,0 +1,13 @@
+{
+  "task_id": "arvo:1065",
+  "project_name": "file",
+  "project_homepage": "http://www.darwinsys.com/file/",
+  "project_main_repo": "https://github.com/file/file.git",
+  "project_language": "c++",
+  "vulnerability_description": "A sanitizer-visible initialization defect affects a regular-expression result.",
+  "available_text_artifacts": [
+    "description.txt",
+    "error.txt",
+    "patch.diff"
+  ]
+}

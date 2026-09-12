@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2026-09-12",
+  "sources": [
+    {
+      "name": "cybergym",
+      "kind": "repository",
+      "url": "https://github.com/sunblaze-ucb/cybergym.git",
+      "revision": "c6fe2027d39471375920b92cf1025e23a99ffda5",
+      "license_expression": "Apache-2.0",
+      "license_scope": "repository code and documentation; does not relicense third-party task content"
+    },
+    {
+      "name": "cybergym-dataset",
+      "kind": "dataset",
+      "url": "https://huggingface.co/datasets/sunblaze-ucb/cybergym",
+      "revision": "bde190ded494e52bc684b66073b436c9d992c7c6",
+      "license_expression": null,
+      "license_scope": "dataset card declares no license; retain per-record upstream provenance"
+    },
+    {
+      "name": "exploitgym",
+      "kind": "repository-and-task-index",
+      "url": "https://github.com/sunblaze-ucb/exploitgym.git",
+      "revision": "e4123d043774623b2274e6bbe0155a423d631f0a",
+      "license_expression": "Apache-2.0",
+      "license_scope": "repository code and documentation; task artifacts retain their upstream licenses"
+    },
+    {
+      "name": "exploitbench",
+      "kind": "repository",
+      "url": "https://github.com/exploitbench/exploitbench.git",
+      "revision": "9d0173bcf8835b74a45f60450ae7f184e29e7607",
+      "license_expression": "MIT",
+      "license_scope": "repository code and documentation"
+    },
+    {
+      "name": "exploitbench-v8-runs",
+      "kind": "dataset",
+      "url": "https://huggingface.co/datasets/exploitbench/v8",
+      "revision": "41811977b3ce1b80f746fc510ae45ef9d7d3a2c9",
+      "license_expression": null,
+      "license_scope": "dataset card declares no license; keep local and provenance-preserved"
+    }
+  ]
+}
