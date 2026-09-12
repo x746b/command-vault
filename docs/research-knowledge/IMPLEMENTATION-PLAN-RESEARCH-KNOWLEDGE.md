@@ -457,11 +457,13 @@ CyberGym profiles. Enrichment updates existing identities and must not create a
 second document or vulnerability profile. All 181 ExploitGym V8 tasks and all
 additional exploit code are deferred to optional later review.
 
-For syzbot, import only vulnerability prose, sanitizer trace, and declared
-patches. For nofuzz, import only description, vulnerable runtime output, exit
-status, and patch. Exclude reproducers, PoCs, Makefiles, images, and executable
-artifacts. These are diagnostic references with harness-observed runtime stages
-and source-documented remediation stages.
+For syzbot, import vulnerability prose, sanitizer trace, C and syzlang
+reproducers, and declared patches. Reproducers remain non-executed, exact-hash,
+license-null source-linked artifacts; use `harness_observed` only where the same
+source record links the retained trace, and never claim `reproduced_local`.
+Explicitly allow `c` and `syz` script retrieval. For nofuzz, import only
+description, vulnerable runtime output, exit status, and patch. Exclude nofuzz
+PoCs, Makefiles, binaries, images, and all V8 material.
 
 For the 484 overlapping CyberGym records, enrich the existing normalized
 identity rather than emitting an ExploitGym duplicate. Existing crash-derived
@@ -1001,8 +1003,8 @@ Deliverables:
   documents or vulnerability profiles;
 - cross-source deduplication/corroboration and broader sanitizer coverage.
 
-All 181 ExploitGym V8 tasks and all exploit code are deferred to an optional
-later review; they are not part of initial Phase 6.
+All 181 ExploitGym V8 tasks and exploit code outside the selected syzbot
+reproducers are deferred to an optional later review.
 
 Exit gate: corpus growth does not swamp personal writeups; broad-query diversity and latency remain acceptable.
 

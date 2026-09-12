@@ -368,12 +368,13 @@ No production research tree, configuration, service, or database was changed.
 The pinned ExploitGym metadata contains exactly 159 syzbot records, 18 unique
 nofuzz records, 484 records that map one-to-one to existing CyberGym external
 IDs, and 181 excluded V8 records. The selected syzbot surface is 159
-descriptions, 159 sanitizer traces, and 131 declared patches (1,557,662 bytes).
+descriptions, 159 sanitizer traces, 159 C reproducers, 159 syzlang reproducers,
+and 131 declared patches (5,794,456 bytes).
 The selected nofuzz surface is 18 descriptions, vulnerable outputs, exit-status
 files, and patches (72 files; 286,627 bytes).
 
-All 159 C reproducers, 159 syz reproducers, 159 Makefiles, 18 nofuzz PoCs, V8
-records, images/environments, and additional exploit code are excluded. Task
+All 159 Makefiles, 18 nofuzz PoCs, V8 records, images/environments, binaries,
+and exploit code outside the selected syzbot reproducers are excluded. Task
 artifact licenses remain null; the repository Apache-2.0 declaration is not
 applied to third-party task material.
 
@@ -387,7 +388,7 @@ External IDs and document identities must remain stable.
 
 | Task | Model | Objective | Owned files | Forbidden actions | Tests/status |
 |---|---|---|---|---|---|
-| syzbot/nofuzz diagnostics | `gpt-5.6-terra` | Emit 177 diagnostic-only bundles with no code | dedicated adapter/wrapper/tests | V8, repro/PoC/code, execution, network, DB/production, delegation | pending assignment |
+| syzbot/nofuzz diagnostics | `gpt-5.6-terra` | Emit 177 diagnostic bundles; syzbot C/syz only are non-executed scripts | dedicated adapter/wrapper/tests | V8, nofuzz PoC, Makefile/binary/image, execution, network, DB/production, delegation | pending assignment |
 | CyberGym enrichment | `gpt-5.6-terra` | Rebuild 1,507 bundles, enriching exactly 484 stable identities | dedicated enricher/wrapper/tests | duplicate identities, overwrites, source-field replacement, execution/network/DB/production, delegation | pending assignment |
 
 ## Acceptance notes

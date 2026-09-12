@@ -40,16 +40,17 @@
         "syzbot_records": 159,
         "syzbot_descriptions": 159,
         "syzbot_traces": 159,
+        "syzbot_repro_c": 159,
+        "syzbot_repro_syz": 159,
         "syzbot_patches": 131,
-        "syzbot_selected_bytes": 1557662,
+        "syzbot_selected_bytes": 5794456,
         "nofuzz_records": 18,
         "nofuzz_selected_files": 72,
         "nofuzz_selected_bytes": 286627,
         "cybergym_enrichment_records": 484
       },
       "phase6_excluded": {
-        "syzbot_repro_c": 159,
-        "syzbot_repro_syz": 159,
+        "syzbot_makefiles": 159,
         "nofuzz_poc": 18,
         "v8_records": 181,
         "exploit_code": true
