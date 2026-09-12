@@ -12,10 +12,12 @@ from pydantic import HttpUrl, TypeAdapter, ValidationError
 from command_vault.models import (
     AssertionProvenance,
     EvidenceRole,
+    MitigationState,
     OperationalStageClass,
     ResearchArtifact,
     ResearchJsonValue,
     ResearchManifest,
+    ResearchMitigation,
     ResearchOperationalStage,
     ResearchSource,
     ResearchVulnerability,
@@ -39,6 +41,7 @@ ENUM_VALUES = {
     EvidenceRole: ["prerequisite", "procedure", "signal", "outcome", "mitigation", "remediation"],
     OperationalStageClass: ["reach", "trigger", "diagnose", "primitive", "control", "objective", "remediation"],
     StageRelation: ["requires", "enables", "blocks", "mitigates", "subsumes"],
+    MitigationState: ["enabled", "disabled", "bypassed", "required", "discussed", "unknown"],
 }
 UNSAFE_PATHS = [
     "", "/", "/report.md", "//host/report.md", "a//b", "a/", ".", "..",
@@ -254,7 +257,7 @@ def test_schema_constraints_cover_paths_enums_urls_and_null_licenses():
     schema = json.loads(SCHEMA_PATH.read_text())
     for enum_type, values in ENUM_VALUES.items():
         assert schema["$defs"][enum_type.__name__]["enum"] == values
-    for name in ("ResearchSource", "ResearchVulnerability", "ResearchArtifact", "ResearchOperationalStage"):
+    for name in ("ResearchSource", "ResearchVulnerability", "ResearchArtifact", "ResearchOperationalStage", "ResearchMitigation"):
         assert schema["$defs"][name]["additionalProperties"] is False
     assert schema["additionalProperties"] is False
     artifact = schema["$defs"]["ResearchArtifact"]["properties"]
@@ -433,3 +436,98 @@ def test_vault_stats_optional_research_totals():
     dumped = VaultStats(**base, research=research).model_dump()
     assert dumped["research"] == research
     assert all(dumped[key] == value for key, value in base.items())
+
+
+@pytest.fixture
+def mitigation_data():
+    return {
+        "canonical_name": "Example mitigation", "raw_label": "Example source label",
+        "state": "discussed", "assertion_provenance": "source",
+        "evidence_sections": ["Overview", "Source observations"],
+    }
+
+
+@pytest.mark.parametrize("state", list(MitigationState))
+def test_mitigation_states_round_trip_with_evidence_and_provenance(manifest_data, mitigation_data, state):
+    mitigation_data["state"] = state.value
+    manifest = ResearchManifest(**manifest_data, mitigations=[mitigation_data])
+    assert manifest.mitigations[0].state is state
+    assert manifest.mitigations[0].assertion_provenance is AssertionProvenance.SOURCE
+    assert manifest.model_dump(mode="json", by_alias=True)["mitigations"] == [mitigation_data]
+    assert ResearchManifest.model_validate_json(manifest.model_dump_json()) == manifest
+
+
+@pytest.mark.parametrize("field", ["canonical_name", "raw_label", "state", "assertion_provenance", "evidence_sections"])
+def test_mitigation_requires_every_evidence_and_assertion_field(mitigation_data, field):
+    del mitigation_data[field]
+    with pytest.raises(ValidationError, match=field):
+        ResearchMitigation(**mitigation_data)
+
+
+@pytest.mark.parametrize("value", ["", " ", "\t\n", "\u2003", "\u00a0"])
+@pytest.mark.parametrize("field", ["canonical_name", "raw_label", "evidence_sections"])
+def test_mitigation_rejects_blank_labels_and_evidence(mitigation_data, field, value):
+    mitigation_data[field] = [value] if field == "evidence_sections" else value
+    with pytest.raises(ValidationError):
+        ResearchMitigation(**mitigation_data)
+
+
+@pytest.mark.parametrize("sections", [[], None, "Overview", [None], [1], ["Overview", "Overview"]])
+def test_mitigation_rejects_missing_invalid_or_duplicate_evidence(mitigation_data, sections):
+    with pytest.raises(ValidationError):
+        ResearchMitigation(**{**mitigation_data, "evidence_sections": sections})
+
+
+@pytest.mark.parametrize("field,value", [
+    ("state", "unverified"), ("state", None), ("assertion_provenance", "assumed"),
+    ("assertion_provenance", None), ("unexpected", "value"),
+])
+def test_mitigation_rejects_unknown_state_provenance_and_fields(mitigation_data, field, value):
+    with pytest.raises(ValidationError):
+        ResearchMitigation(**{**mitigation_data, field: value})
+
+
+@pytest.mark.parametrize("name", ["Example mitigation", "EXAMPLE MITIGATION", " example   mitigation ", "Example\tmitigation"])
+def test_mitigation_canonical_names_are_unique_after_normalization(manifest_data, mitigation_data, name):
+    with pytest.raises(ValidationError, match="canonical names must be unique"):
+        ResearchManifest(**manifest_data, mitigations=[
+            mitigation_data, {**mitigation_data, "canonical_name": name, "raw_label": "Another label", "state": "unknown"},
+        ])
+
+
+def test_mitigation_preserves_original_text_order_and_other_fields(manifest_data, mitigation_data):
+    first = {**mitigation_data, "canonical_name": " Zeta   mitigation ", "raw_label": " Label with spaces ",
+             "evidence_sections": [" Z section ", "A section"]}
+    second = {**mitigation_data, "canonical_name": "Alpha mitigation"}
+    manifest = ResearchManifest(**{**manifest_data, "project": "  unchanged  "}, mitigations=[first, second])
+    assert manifest.model_dump(mode="json")["mitigations"] == [first, second]
+    assert manifest.project == "  unchanged  "
+
+
+def test_mitigation_collection_defaults_are_independent(manifest_data, mitigation_data):
+    first = ResearchManifest(**manifest_data)
+    second = ResearchManifest(**manifest_data)
+    first.mitigations.append(ResearchMitigation(**mitigation_data))
+    assert second.mitigations == []
+    assert ResearchManifest.model_fields["mitigations"].default_factory is list
+    assert ResearchMitigation.model_fields["evidence_sections"].is_required()
+
+
+def test_mitigation_schema_constraints_are_explicit():
+    schema = json.loads(SCHEMA_PATH.read_text())
+    model = schema["$defs"]["ResearchMitigation"]
+    assert model["additionalProperties"] is False
+    assert set(model["required"]) == {"canonical_name", "raw_label", "state", "assertion_provenance", "evidence_sections"}
+    assert schema["$defs"]["MitigationState"]["enum"] == ENUM_VALUES[MitigationState]
+    assert model["properties"]["state"] == {"$ref": "#/$defs/MitigationState"}
+    assert model["properties"]["assertion_provenance"] == {"$ref": "#/$defs/AssertionProvenance"}
+    evidence = model["properties"]["evidence_sections"]
+    assert evidence["minItems"] == 1 and evidence["uniqueItems"] is True
+    assert evidence["items"] == {"minLength": 1, "pattern": r"\S", "type": "string"}
+    for field in ("canonical_name", "raw_label"):
+        assert model["properties"][field]["minLength"] == 1
+        assert model["properties"][field]["pattern"] == r"\S"
+    mitigations = schema["properties"]["mitigations"]
+    assert mitigations["uniqueItems"] is True
+    assert "case folding" in mitigations["description"]
+    assert schema["properties"]["schema_version"]["const"] == 1

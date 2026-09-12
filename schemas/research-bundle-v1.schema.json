@@ -53,6 +53,18 @@
         }
       ]
     },
+    "MitigationState": {
+      "enum": [
+        "enabled",
+        "disabled",
+        "bypassed",
+        "required",
+        "discussed",
+        "unknown"
+      ],
+      "title": "MitigationState",
+      "type": "string"
+    },
     "OperationalStageClass": {
       "enum": [
         "reach",
@@ -145,6 +157,49 @@
         "role"
       ],
       "title": "ResearchArtifact",
+      "type": "object"
+    },
+    "ResearchMitigation": {
+      "additionalProperties": false,
+      "properties": {
+        "canonical_name": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Canonical Name",
+          "type": "string"
+        },
+        "raw_label": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Raw Label",
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/MitigationState"
+        },
+        "assertion_provenance": {
+          "$ref": "#/$defs/AssertionProvenance"
+        },
+        "evidence_sections": {
+          "items": {
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Evidence Sections",
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "canonical_name",
+        "raw_label",
+        "state",
+        "assertion_provenance",
+        "evidence_sections"
+      ],
+      "title": "ResearchMitigation",
       "type": "object"
     },
     "ResearchOperationalStage": {
@@ -523,6 +578,15 @@
         "$ref": "#/$defs/ResearchOperationalStage"
       },
       "title": "Operational Stages",
+      "type": "array",
+      "uniqueItems": true
+    },
+    "mitigations": {
+      "description": "Mitigations in source order; canonical_name must be unique after trimming, collapsing whitespace, and case folding. Normalized canonical-name uniqueness is enforced by the manifest validator.",
+      "items": {
+        "$ref": "#/$defs/ResearchMitigation"
+      },
+      "title": "Mitigations",
       "type": "array",
       "uniqueItems": true
     }

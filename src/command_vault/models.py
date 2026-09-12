@@ -71,6 +71,15 @@ class StageRelation(str, Enum):
     SUBSUMES = "subsumes"
 
 
+class MitigationState(str, Enum):
+    ENABLED = "enabled"
+    DISABLED = "disabled"
+    BYPASSED = "bypassed"
+    REQUIRED = "required"
+    DISCUSSED = "discussed"
+    UNKNOWN = "unknown"
+
+
 # Segments may start with a non-dot, one dot followed by a non-dot, or
 # two dots followed by another character. Exclude traversal segments,
 # backslashes, and ASCII control characters throughout each segment.
@@ -198,6 +207,32 @@ class ResearchOperationalStage(_ResearchContract):
         return value
 
 
+class ResearchMitigation(_ResearchContract):
+    canonical_name: str = Field(min_length=1, json_schema_extra={"pattern": r"\S"})
+    raw_label: str = Field(min_length=1, json_schema_extra={"pattern": r"\S"})
+    state: MitigationState
+    assertion_provenance: AssertionProvenance
+    evidence_sections: list[Annotated[str, Field(min_length=1, json_schema_extra={"pattern": r"\S"})]] = Field(
+        min_length=1, json_schema_extra={"uniqueItems": True}
+    )
+
+    @field_validator("canonical_name", "raw_label")
+    @classmethod
+    def nonblank_labels(cls, value):
+        if not value.strip():
+            raise ValueError("Mitigation labels must contain non-whitespace text")
+        return value
+
+    @field_validator("evidence_sections")
+    @classmethod
+    def nonblank_unique_evidence_sections(cls, value):
+        if any(not section.strip() for section in value):
+            raise ValueError("Mitigation evidence sections must contain non-whitespace text")
+        if len(value) != len(set(value)):
+            raise ValueError("Mitigation evidence sections must not contain duplicates")
+        return value
+
+
 class ResearchManifest(_ResearchContract):
     schema_version: Literal[1]
     source: ResearchSource
@@ -218,6 +253,15 @@ class ResearchManifest(_ResearchContract):
         ),
         json_schema_extra={"uniqueItems": True},
     )
+    mitigations: list[ResearchMitigation] = Field(
+        default_factory=list,
+        description=(
+            "Mitigations in source order; canonical_name must be unique after trimming, "
+            "collapsing whitespace, and case folding. Normalized canonical-name uniqueness "
+            "is enforced by the manifest validator."
+        ),
+        json_schema_extra={"uniqueItems": True},
+    )
 
     @field_validator("source_metadata", mode="before")
     @classmethod
@@ -230,6 +274,14 @@ class ResearchManifest(_ResearchContract):
         pairs = [(stage.canonical_name, stage.matched_alias) for stage in value]
         if len(pairs) != len(set(pairs)):
             raise ValueError("Operational stage (canonical_name, matched_alias) pairs must be unique")
+        return value
+
+    @field_validator("mitigations")
+    @classmethod
+    def unique_mitigation_names(cls, value):
+        names = [" ".join(mitigation.canonical_name.split()).casefold() for mitigation in value]
+        if len(names) != len(set(names)):
+            raise ValueError("Normalized mitigation canonical names must be unique")
         return value
 
 
