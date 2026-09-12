@@ -734,6 +734,38 @@ def test_artifact_script_hashes_source_anchor_validation_stages_and_stats(db, ar
     assert stats.research['validation_by_status'] == {'source_documented': 1}
 
 
+def test_explicit_syz_script_allowlist_and_nonallowlisted_artifact(db, bundle):
+    root, manifest = bundle
+    (root / 'artifacts').mkdir()
+    syz = b'r0 = socket$inet_tcp(2, 1, 0)\nclose(r0)\n'
+    python = b'print("not an imported research script")\n'
+    for name, content in [('repro.syz', syz), ('helper.py', python)]:
+        (root / 'artifacts' / name).write_bytes(content)
+    manifest['artifacts'] = [
+        {
+            'path': 'artifacts/repro.syz', 'kind': 'reproducer', 'role': 'procedure',
+            'language': 'syz', 'sha256': hashlib.sha256(syz).hexdigest(),
+            'validation': 'harness_observed', 'license_expression': None,
+        },
+        {
+            'path': 'artifacts/helper.py', 'kind': 'metadata-helper', 'role': 'signal',
+            'language': 'python', 'sha256': hashlib.sha256(python).hexdigest(),
+            'validation': 'source_documented', 'license_expression': None,
+        },
+    ]
+    write_manifest(root, manifest)
+    result = ResearchIndexer(db).index_bundle(root)
+    assert result.scripts_indexed == result.validation_records == result.evidence_links == 1
+    with db._get_connection() as conn:
+        script = conn.execute('SELECT language,code,purpose FROM scripts').fetchone()
+        assert tuple(script) == ('syz', syz.decode(), 'reproducer')
+        evidence = conn.execute('SELECT validation_status,source_anchor_hash FROM evidence_links').fetchone()
+        assert tuple(evidence) == ('harness_observed', hashlib.sha256(syz).hexdigest())
+        assert conn.execute("SELECT count(*) FROM scripts WHERE language='python'").fetchone()[0] == 0
+    results = db.search_scripts('socket inet tcp', language='syz')
+    assert len(results) == 1 and results[0].language == 'syz'
+
+
 def test_artifact_reindex_rebuilds_evidence_without_orphans_and_preserves_stages(db, artifact_bundle):
     root, _, _ = artifact_bundle
     indexer = ResearchIndexer(db)

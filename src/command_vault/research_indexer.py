@@ -16,6 +16,9 @@ from .research import load_research_bundle, make_document_snapshot
 from .security import SecurityFilter
 
 
+_RESEARCH_SCRIPT_LANGUAGES = frozenset({'c', 'syz'})
+
+
 @dataclass(frozen=True)
 class ResearchIndexResult:
     bundles_seen: int = 0
@@ -114,13 +117,13 @@ class ResearchIndexer:
         for artifact, verified in zip(manifest.artifacts, loaded.artifacts, strict=True):
             if verified.path != loaded.root / artifact.path:
                 raise ValueError('Loaded artifact path/order conflicts with the manifest')
-            if artifact.language != 'c':
+            if artifact.language not in _RESEARCH_SCRIPT_LANGUAGES:
                 continue
             try:
                 text = verified.content.decode('utf-8', errors='strict')
             except UnicodeDecodeError:
-                raise ValueError('C artifact must contain valid UTF-8') from None
-            code = self.security.sanitize_text(text, source_file='research C artifact')
+                raise ValueError('Research script artifact must contain valid UTF-8') from None
+            code = self.security.sanitize_text(text, source_file='research script artifact')
             normalized = '\n'.join(line.rstrip() for line in code.replace('\r\n', '\n').split('\n')).strip('\n')
             scripts.append((artifact, verified.sha256, code,
                             hashlib.sha256(code.encode('utf-8')).hexdigest(),
@@ -188,7 +191,7 @@ class ResearchIndexer:
                                  (writeup_id, vulnerability_id))
                 for artifact, source_hash, code, artifact_hash, normalized_hash in scripts:
                     script_id = self.db.insert_script(Script(
-                        writeup_id=writeup_id, language='c', code=code, purpose=artifact.kind,
+                        writeup_id=writeup_id, language=artifact.language, code=code, purpose=artifact.kind,
                         source_section=f'Artifact: {artifact.path}',
                     ))
                     conn.execute('UPDATE scripts SET artifact_hash=?,normalized_hash=? WHERE id=?',

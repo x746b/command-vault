@@ -390,6 +390,7 @@ External IDs and document identities must remain stable.
 |---|---|---|---|---|---|
 | syzbot/nofuzz diagnostics | `gpt-5.6-terra` | Emit 177 diagnostic bundles; syzbot C/syz only are non-executed scripts | dedicated adapter/wrapper/tests | V8, nofuzz PoC, Makefile/binary/image, execution, network, DB/production, delegation | pending assignment |
 | CyberGym enrichment | `gpt-5.6-terra` | Rebuild 1,507 bundles, enriching exactly 484 stable identities | dedicated enricher/wrapper/tests | duplicate identities, overwrites, source-field replacement, execution/network/DB/production, delegation | pending assignment |
+| syz retrieval allowlist | `gpt-daybreak-blue-latest` | Extend explicit research script indexing from C to C+syz | `research_indexer.py`, focused indexer test | no execution, no arbitrary language import, no schema/live DB changes | complete; 59 focused tests |
 
 ## Acceptance notes
 
