@@ -10,6 +10,7 @@ import command_vault.database as database_module
 from command_vault import cli
 from command_vault.database import Database
 from command_vault.knowledge import Knowledge
+from command_vault.pagination import Cursor
 from command_vault.server import create_server
 
 
@@ -207,3 +208,95 @@ def test_cli_prose_does_not_accept_new_knowledge_flags(corpus, monkeypatch, caps
         cli.main()
     assert error.value.code == 2
     assert 'unrecognized arguments' in capsys.readouterr().err
+
+
+@pytest.fixture
+def diagnostic_corpus(corpus):
+    with corpus.transaction(), corpus._get_connection() as conn:
+        conn.execute('UPDATE writeups SET document_kind=? WHERE id=?', ('diagnostic-reference', 1))
+        conn.execute('UPDATE writeups SET document_kind=? WHERE id=?', ('vulnerability-research', 2))
+        conn.execute('INSERT INTO writeups (id,filename,filepath,writeup_type) VALUES (?,?,?,?)',
+                     (3, 'personal.md', '/personal.md', 'box'))
+        conn.execute('INSERT INTO writeup_chunks (id,writeup_id,section,content,chunk_index) VALUES (?,?,?,?,?)',
+                     (31, 3, 'Personal', 'orchard personal observation', 0))
+        conn.execute('INSERT INTO tags (id,name) VALUES (?,?)', (1, 'research'))
+        conn.executemany('INSERT INTO writeup_tags (writeup_id,tag_id) VALUES (?,?)', [(1, 1), (2, 1)])
+    return corpus
+
+
+def test_default_scope_excludes_diagnostics_but_retains_personal_and_research(diagnostic_corpus):
+    before = diagnostic_corpus.db_path.read_bytes()
+    knowledge = Knowledge(Database(str(diagnostic_corpus.db_path), readonly=True))
+    page = knowledge.search('orchard')
+    assert set(ids(page)) == {21, 31}
+    assert page.match_mode == 'all_terms' and page.applied_filters == {}
+    assert 'Diagnostic references excluded; use type research or a structured filter.' in page.notice
+    assert diagnostic_corpus.db_path.read_bytes() == before
+
+
+@pytest.mark.parametrize('options,expected', [
+    ({'writeup_type': 'research'}, {11, 12, 13, 21}),
+    ({'tags': ['#ReSeArCh']}, {11, 12, 13, 21}),
+    ({'writeup_type': 'box'}, {31}),
+    ({'source_name': 'Alpha'}, {11, 12, 13}),
+    ({'domain': 'linux'}, {11, 12, 13}),
+    ({'external_id': 'Task-A'}, {11, 12, 13}),
+    ({'cve': 'CVE-2099-0001'}, {11, 12, 13}),
+    ({'project': 'Linux'}, {11, 12, 13}),
+    ({'vulnerability_class': 'Read issue'}, {11, 12, 13}),
+    ({'sanitizer': 'KASAN'}, {11, 12, 13}),
+    ({'operational_stage': 'address disclosure'}, {11}),
+    ({'mitigation': 'KASLR'}, {11, 12, 13}),
+    ({'validation_status': 'failed'}, {12}),
+])
+def test_explicit_research_intent_disables_default_diagnostic_exclusion(diagnostic_corpus, options, expected):
+    page = Knowledge(diagnostic_corpus).search('orchard', **options)
+    assert set(ids(page)) == expected
+    assert 'Diagnostic references excluded' not in page.notice
+    assert page.applied_filters == {name: value for name, value in options.items() if name in FILTERS}
+
+
+def test_required_and_unmatched_terms_are_evaluated_within_default_scope(diagnostic_corpus):
+    knowledge = Knowledge(diagnostic_corpus)
+    page = knowledge.search('orchard Alpha', required_terms=['Alpha'])
+    assert page.results == []
+    assert page.unmatched_query_terms == page.unmatched_required_terms == ['Alpha']
+    explicit = knowledge.search('orchard Alpha', required_terms=['Alpha'], writeup_type='research')
+    assert set(ids(explicit)) == {11, 12, 13}
+    assert explicit.unmatched_required_terms == []
+
+
+def test_default_scope_is_bound_into_cursor(diagnostic_corpus):
+    knowledge = Knowledge(diagnostic_corpus)
+    first = knowledge.search('orchard', limit=1)
+    assert first.next_cursor
+    assert len(knowledge.search('orchard', cursor=first.next_cursor).results) == 1
+    with pytest.raises(ValueError, match='filters'):
+        knowledge.search('orchard', writeup_type='research', cursor=first.next_cursor)
+    previous_key = {'search': 'knowledge-v1', 'query': 'orchard', 'type': None, 'tags': [], 'required': []}
+    token_without_scope = Cursor(diagnostic_corpus, previous_key, None).next(1)
+    with pytest.raises(ValueError, match='filters'):
+        knowledge.search('orchard', cursor=token_without_scope)
+    scoped_key = {**previous_key, 'default_scope': 'exclude-diagnostic-reference'}
+    assert Cursor(diagnostic_corpus, scoped_key, first.next_cursor).offset == 1
+
+
+def test_schema_one_default_search_has_no_document_kind_predicate_or_scope_notice(tmp_path, monkeypatch):
+    with monkeypatch.context() as patch:
+        patch.setattr(database_module, 'CURRENT_SCHEMA_VERSION', 1)
+        db = Database(str(tmp_path / 'v1-default.db'))
+    with db.transaction(), db._get_connection() as conn:
+        conn.execute('INSERT INTO writeups (id,filename,filepath,writeup_type) VALUES (?,?,?,?)',
+                     (1, 'personal.md', '/personal.md', 'box'))
+        conn.execute('INSERT INTO writeup_chunks (writeup_id,content,chunk_index) VALUES (?,?,?)',
+                     (1, 'orchard legacy observation', 0))
+    readonly = Database(str(db.db_path), readonly=True)
+    before = db.db_path.read_bytes()
+    statements = []
+    with readonly.read_snapshot(), readonly._get_connection() as conn:
+        conn.set_trace_callback(statements.append)
+        page = Knowledge(readonly).search('orchard')
+    assert len(page.results) == 1 and page.match_mode == 'all_terms'
+    assert page.applied_filters == {} and 'Diagnostic references excluded' not in page.notice
+    assert not any('document_kind' in query for query in statements)
+    assert db.db_path.read_bytes() == before

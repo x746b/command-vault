@@ -206,6 +206,77 @@ Final promotion will retain the managed corpus under
 fallback snapshots, and a corpus manifest/hash inventory. No files have been
 written to that production tree in this phase.
 
+### 2026-09-13 — Phase 4 CyberGym selective-text breadth
+
+The pinned CyberGym acquisition completed with 1,507 tasks, 4,521 verified LFS
+objects, and 89,741,551 selected bytes. All repository archives were excluded.
+The acquisition manifest SHA-256 is
+`b67c1c150aebc4294e6ce2857746fe15cb2cf7df42c9b74c909bcf749b3553a1`.
+
+Full normalization produced 1,507 managed CyberGym bundles and 4,521 artifacts.
+Audit results:
+
+- 1,368 ARVO and 139 OSS-Fuzz records;
+- 1,103 ASAN, 302 MSAN, 99 UBSAN, and three unknown sanitizer labels;
+- 22 source files required deterministic invalid-UTF-8 escaping;
+- two oversized runtime reports use explicit bounded excerpts;
+- every normalized artifact retains matching raw acquisition size/SHA-256;
+- five source secrets and one private-key block were redacted by the adapter;
+- forbidden metadata controls are escaped before manifest/SQLite/FTS storage.
+
+The first two-source candidate contains 1,534 research documents, 30,108 new
+chunks, 1,534 vulnerabilities, 27 C scripts, 11 stages, and 28,190 evidence
+links. It is 211,947,520 bytes with integrity `ok` and no foreign-key violations.
+All 1,534 managed documents and embedded snapshots match their indexed hashes.
+
+`arvo:10841` demonstrates the intended value: description identifies a strip-row
+invariant, MSAN supplies the diagnostic path, and the patch adds bounds,
+duplicate-row, and one-strip-per-row validation. Exact task/function/patch
+queries and profiles work without claiming a CVE, RCE, or exploitability.
+
+#### Public Astra task-packet ledger
+
+All packets used requested model `gpt-6-astra` with high reasoning, prohibited
+recursive delegation, production writes, service/config changes, artifact
+execution, Docker, and unapproved dependencies.
+
+| Task | Objective | Owned files | Required tests/acceptance | Status |
+|---|---|---|---|---|
+| CyberGym text downloader | Acquire only description/error/patch LFS objects with bounded HTTPS/hash/size/resume safety | `scripts/download_cybergym_text.py`, `tests/test_download_cybergym_text.py` | mocked selection, archive exclusion, pointer/JSON/HTTPS/header/hash/size/resume/race/retry/dry-run/CLI; full suite | complete; commit `2f75be7`, 43 focused, 879 full |
+| CyberGym adapter | Normalize pinned task metadata, sanitizer evidence and structural patch facts without exploit inference | `adapters/cybergym.py`, adapter export, `test_cybergym_adapter.py` | facts, unknowns, provenance, bounds, encoding, redaction, LFS/missing/symlink/refusal, no execution/network/DB | complete; commit `457b4f5`, integrated 912 tests |
+| Validation provenance | Propagate stage evidence status; crash stages harness-observed, remediation source-documented | models/schema/indexer/CyberGym adapter and their focused tests | schema parity, exact evidence status, no invented chunk validation records | complete; commit `900f423`, integrated 926 tests |
+| Multi-source candidate | Build one create-only candidate from ordered repeated bundle collections | candidate-builder script/tests | aggregation, preflight, partial-failure preservation, baseline unchanged, single-source compatibility | complete; commit `900f423`, 30 focused |
+| Affected symbols | Propagate bounded parsed functions through manifest, existing DB field and profile list | models/schema/adapter/indexer/profiles/responses and focused tests | ordering, caps, NULL/JSON storage, legacy decoding, content-free errors | complete; commit `b36de93`, integrated 962 tests |
+| Metadata controls | Escape forbidden controls while preserving raw acquisition authority | CyberGym adapter/tests | nested values/keys, collision failure, whitespace preservation, redaction/determinism | complete; 33 focused, 967 full; this checkpoint |
+| Diagnostic default scope | Prevent CyberGym volume from entering unfiltered operator searches while preserving explicit research access | CyberGym adapter, knowledge search, adapter/filter tests | default/explicit scope, cursor/schema1/required-term behavior, retrieval regression | complete; 77 focused, 984 full; this checkpoint |
+| CyberGym adapter CLI | Provide bounded offline adapter invocation without listing 1,507 paths | `scripts/build_cybergym_bundles.py`, wrapper tests | aggregate JSON, valid bundle, refusal, no network/execution/DB | complete; 10 focused, 994 full; this checkpoint |
+
+The explicit Sherlock-filtered rubric remains 15/16 supported at top five after
+the breadth import. The initial unfiltered candidate showed unacceptable volume
+effects (median 106 ms versus 42 ms baseline and CyberGym entering unrelated
+pages), which triggered the diagnostic-default-scope task rather than accepting
+the regression.
+
+The corrected scoped candidate is
+`/tmp/command-vault-research.j3Xal9/candidate-databases/research-phase4-scoped.db`,
+SHA-256
+`926d50264d1002dc05911ffaacb8bd48616f2c51a5121383c68a324d447d30e6`.
+It contains 1,507 `diagnostic-reference` CyberGym documents and 27
+`vulnerability-research` ExploitGym documents. Its 211,963,904-byte database and
+150 MiB managed corpus pass integrity, foreign-key, managed-file, snapshot, and
+raw-acquisition hash checks.
+
+After default-scope correction, no CyberGym record enters the sampled unrelated
+unfiltered top-five pages. The development rubric remains 15/16 supported at
+top five for baseline and candidate. Unfiltered median search latency is 47.157
+ms versus 42.119 ms at baseline; maximum is 142.151 ms versus 122.004 ms.
+Evidence ranks shift by at most one position in three natural-language cases,
+with no support loss. Explicit research/source/external-ID filters continue to
+retrieve CyberGym records.
+
+The final integrated Phase 4 suite passes 994 tests. No production tree,
+database, configuration, or service has been changed.
+
 ## Acceptance notes
 
 The implementation plan remains the governing contract. Passing a subagent's

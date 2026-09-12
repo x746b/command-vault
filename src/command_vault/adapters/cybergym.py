@@ -17,6 +17,7 @@ from .exploitgym import (
 _DATASET_URL = 'https://huggingface.co/datasets/sunblaze-ucb/cybergym'
 MAX_RUNTIME_BYTES = 4 * 1024 * 1024
 _TASK = re.compile(r'(arvo|oss-fuzz):([A-Za-z0-9][A-Za-z0-9._-]*)\Z')
+_METADATA_CONTROLS = re.compile(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]')
 _SANITIZERS = {
     'AddressSanitizer': 'asan', 'MemorySanitizer': 'msan', 'UndefinedBehaviorSanitizer': 'ubsan',
     'LeakSanitizer': 'lsan', 'ThreadSanitizer': 'tsan', 'HWAddressSanitizer': 'hwasan',
@@ -150,6 +151,31 @@ class CyberGymAdapter(ExploitGymKernelCTFAdapter):
                  max_metadata_bytes=8_388_608, max_source_file_bytes=50_331_648):
         super().__init__(dataset_root, revision, security_filter, max_metadata_bytes, max_source_file_bytes)
         self.dataset_root = self.repository_root
+        self._metadata_controls = 0
+
+    def _metadata_text(self, value):
+        sanitized = self._sanitize(value)
+
+        def escape(match):
+            self._metadata_controls += 1
+            return f'\\u{ord(match[0]):04x}'
+
+        return _METADATA_CONTROLS.sub(escape, sanitized)
+
+    def _sanitize_metadata(self, value):
+        if isinstance(value, str):
+            return self._metadata_text(value)
+        if isinstance(value, list):
+            return [self._sanitize_metadata(item) for item in value]
+        if isinstance(value, dict):
+            result = {}
+            for key, item in value.items():
+                normalized_key = self._metadata_text(key)
+                if normalized_key in result:
+                    raise ValueError('Metadata keys collide after safe representation')
+                result[normalized_key] = self._sanitize_metadata(item)
+            return result
+        return value
 
     def _records(self, root_fd):
         data = _read_bundle_file(self.dataset_root, root_fd, 'tasks.json',
@@ -180,7 +206,7 @@ class CyberGymAdapter(ExploitGymKernelCTFAdapter):
             if not isinstance(difficulty, dict) or not all(isinstance(items, list) and all(isinstance(item, str) for item in items)
                                                           for items in difficulty.values()):
                 raise ValueError('Task difficulty must map names to lists of strings')
-            if {'derived_error', 'derived_patch', 'evidence_completeness', 'source_files'}.intersection(record):
+            if {'derived_error', 'derived_patch', 'evidence_completeness', 'source_files', 'metadata_normalization'}.intersection(record):
                 raise ValueError('Task metadata contains reserved derived-fact keys')
         return records, sorted(records, key=lambda record: record['task_id'])
 
@@ -211,7 +237,9 @@ class CyberGymAdapter(ExploitGymKernelCTFAdapter):
             artifacts[name] = self._sanitize_runtime(text) if name == 'error.txt' else self._sanitize(text)
             source_files[name] = {'raw_bytes': len(data), 'raw_sha256': hashlib.sha256(data).hexdigest(),
                                   'utf8_valid': utf8_valid, 'normalized_truncated': False, 'omitted_bytes': 0}
+        self._metadata_controls = 0
         source_record = self._sanitize_metadata(record)
+        metadata_normalization = {'provenance': 'deterministic', 'control_characters_escaped': self._metadata_controls}
         error = _error_facts(artifacts['error.txt'])
         patch = _patch_facts(artifacts['patch.diff'])
         excerpt, truncated, omitted = _bounded_runtime(artifacts['error.txt'], MAX_RUNTIME_BYTES)
@@ -220,7 +248,8 @@ class CyberGymAdapter(ExploitGymKernelCTFAdapter):
         completeness = {'description': True, 'runtime': True, 'patch': True,
                         'complete_triple': True, 'count': 3, 'provenance': 'deterministic'}
         facts = {**source_record, 'derived_error': error, 'derived_patch': patch,
-                 'evidence_completeness': completeness, 'source_files': source_files}
+                 'evidence_completeness': completeness, 'source_files': source_files,
+                 'metadata_normalization': metadata_normalization}
         upstream_url = f'{_DATASET_URL}/tree/{self.revision}/{source_path}'
         stages = [
             {'canonical_name': name, 'stage_class': stage_class, 'assertion_provenance': 'deterministic',
@@ -240,13 +269,14 @@ class CyberGymAdapter(ExploitGymKernelCTFAdapter):
             manifest_artifacts.append({'path': f'artifacts/{name}', 'kind': kind, 'role': role,
                                        'validation': validation, 'media_type': media_type, 'license_expression': None,
                                        'sha256': hashlib.sha256(artifacts[name].encode('utf-8')).hexdigest()})
-        summary = source_record['vulnerability_description'] or None
+        description = source_record['vulnerability_description']
+        summary = description if description.strip() else None
         manifest = ResearchManifest.model_validate({
             'schema_version': 1, 'source': {'name': 'cybergym', 'revision': self.revision,
                 'repository_url': _DATASET_URL, 'homepage': _DATASET_URL, 'upstream_url': upstream_url,
                 'license_expression': None},
             'external_id': source_record['task_id'], 'domain': 'userspace', 'project': source_record['project_name'],
-            'language': source_record['project_language'], 'document_kind': 'vulnerability-research',
+            'language': source_record['project_language'], 'document_kind': 'diagnostic-reference',
             'source_path': source_path, 'source_metadata': facts, 'artifacts': manifest_artifacts,
             'operational_stages': stages,
             'vulnerability': {'summary': summary, 'summary_provenance': 'source' if summary else None,
@@ -257,7 +287,8 @@ class CyberGymAdapter(ExploitGymKernelCTFAdapter):
         title = ' '.join(f'{source_record["project_name"]}: {source_record["task_id"]}'.split())
         document = (
             f'# {title}\n\nSource: cybergym\nRevision: {self.revision}\nUpstream: {upstream_url}\n\n'
-            + '## Source metadata\n\n' + _fenced(json_text({**source_record, 'source_files': source_files}), 'json') + '\n'
+            + '## Source metadata\n\n' + _fenced(json_text({**source_record, 'source_files': source_files,
+                                                         'metadata_normalization': metadata_normalization}), 'json') + '\n'
             + '## Description\n\n' + artifacts['description.txt'] + '\n\n'
             + '## Derived error facts\n\n' + _fenced(json_text({**error, 'evidence_completeness': completeness}), 'json') + '\n'
             + '## Runtime evidence\n\n' + _fenced(artifacts['error.txt'], 'text') + '\n'

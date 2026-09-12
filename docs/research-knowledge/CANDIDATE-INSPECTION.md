@@ -3,7 +3,7 @@
 The current Phase 3 build is a separate candidate at:
 
 ```text
-/tmp/command-vault-research.j3Xal9/candidate-databases/exploitgym-kernelctf-phase3-managed.db
+/tmp/command-vault-research.j3Xal9/candidate-databases/research-phase4-scoped.db
 ```
 
 These commands select that database only for the invoked process. They do not
@@ -20,6 +20,21 @@ uv run python scripts/build_exploitgym_bundles.py \
   --output /tmp/command-vault-research.j3Xal9/<new-managed-fixture>/research/exploitgym
 ```
 
+Acquire and normalize CyberGym's text-only corpus; no repository archive is
+selected:
+
+```bash
+uv run python scripts/download_cybergym_text.py \
+  --pointer-root /tmp/command-vault-research.j3Xal9/source-clones/cybergym-pointers \
+  --output /tmp/command-vault-research.j3Xal9/downloads/<new-cybergym-text> \
+  --revision bde190ded494e52bc684b66073b436c9d992c7c6
+
+uv run python scripts/build_cybergym_bundles.py \
+  --dataset /tmp/command-vault-research.j3Xal9/downloads/<new-cybergym-text> \
+  --revision bde190ded494e52bc684b66073b436c9d992c7c6 \
+  --output /tmp/command-vault-research.j3Xal9/<new-managed-fixture>/research/cybergym
+```
+
 Create a new candidate without modifying the baseline:
 
 ```bash
@@ -27,6 +42,7 @@ uv run python scripts/build_research_candidate.py \
   --baseline /tmp/command-vault-research.j3Xal9/baseline/vault-baseline.db \
   --candidate /tmp/command-vault-research.j3Xal9/candidate-databases/<new-candidate-name>.db \
   --bundles /tmp/command-vault-research.j3Xal9/<new-managed-fixture>/research/exploitgym \
+  --bundles /tmp/command-vault-research.j3Xal9/<new-managed-fixture>/research/cybergym \
   --managed-root /tmp/command-vault-research.j3Xal9/<new-managed-fixture>/research
 ```
 
@@ -36,7 +52,7 @@ bundles and databases are never overwritten.
 ## See what was added
 
 ```bash
-VAULT_DB=/tmp/command-vault-research.j3Xal9/candidate-databases/exploitgym-kernelctf-phase3-managed.db \
+VAULT_DB=/tmp/command-vault-research.j3Xal9/candidate-databases/research-phase4-scoped.db \
   uv run vault --json stats
 ```
 
@@ -49,14 +65,14 @@ document count alongside the existing box/challenge/Sherlock counts.
 ## Search research only
 
 ```bash
-VAULT_DB=/tmp/command-vault-research.j3Xal9/candidate-databases/exploitgym-kernelctf-phase3-managed.db \
+VAULT_DB=/tmp/command-vault-research.j3Xal9/candidate-databases/research-phase4-scoped.db \
   uv run vault --json knowledge "KASAN use-after-free" --type research
 ```
 
 Search by a precise identifier when available:
 
 ```bash
-VAULT_DB=/tmp/command-vault-research.j3Xal9/candidate-databases/exploitgym-kernelctf-phase3-managed.db \
+VAULT_DB=/tmp/command-vault-research.j3Xal9/candidate-databases/research-phase4-scoped.db \
   uv run vault --json knowledge "CVE-2023-3776" --type research \
   --require-term CVE-2023-3776
 ```
@@ -64,7 +80,7 @@ VAULT_DB=/tmp/command-vault-research.j3Xal9/candidate-databases/exploitgym-kerne
 Combine exact structured filters without changing full-text ranking:
 
 ```bash
-VAULT_DB=/tmp/command-vault-research.j3Xal9/candidate-databases/exploitgym-kernelctf-phase3-managed.db \
+VAULT_DB=/tmp/command-vault-research.j3Xal9/candidate-databases/research-phase4-scoped.db \
   uv run vault --json knowledge "ctl_buf controlled data" --type research \
   --source-name exploitgym --domain linux-kernel --cve CVE-2023-3776 \
   --mitigation CONFIG_KMALLOC_SPLIT_VARSIZE
@@ -79,14 +95,14 @@ operational stage, mitigation, and validation status.
 Inspect one CVE or source task without retrieving all stored content:
 
 ```bash
-VAULT_DB=/tmp/command-vault-research.j3Xal9/candidate-databases/exploitgym-kernelctf-phase3-managed.db \
+VAULT_DB=/tmp/command-vault-research.j3Xal9/candidate-databases/research-phase4-scoped.db \
   uv run vault --json vulnerability CVE-2023-3776 --limit 12
 ```
 
 Resolve a stage alias to its canonical operational stage and evidence:
 
 ```bash
-VAULT_DB=/tmp/command-vault-research.j3Xal9/candidate-databases/exploitgym-kernelctf-phase3-managed.db \
+VAULT_DB=/tmp/command-vault-research.j3Xal9/candidate-databases/research-phase4-scoped.db \
   uv run vault --json stage "KASLR Bypass" --domain linux-kernel --limit 5
 ```
 
@@ -97,7 +113,7 @@ responses intentionally omit stored exploit/document content.
 Read the complete source section using the returned reference:
 
 ```bash
-VAULT_DB=/tmp/command-vault-research.j3Xal9/candidate-databases/exploitgym-kernelctf-phase3-managed.db \
+VAULT_DB=/tmp/command-vault-research.j3Xal9/candidate-databases/research-phase4-scoped.db \
   uv run vault --json context 'chunk:<id>@<document>.<revision>'
 ```
 
@@ -113,7 +129,7 @@ For an isolated client inspection, launch a separate stdio process with both the
 candidate selection and read-only override:
 
 ```bash
-VAULT_DB=/tmp/command-vault-research.j3Xal9/candidate-databases/exploitgym-kernelctf-phase3-managed.db \
+VAULT_DB=/tmp/command-vault-research.j3Xal9/candidate-databases/research-phase4-scoped.db \
 VAULT_READONLY=1 \
   uv run command-vault
 ```

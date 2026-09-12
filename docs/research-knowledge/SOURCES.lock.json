@@ -20,7 +20,9 @@
       "selected_text_objects": 4521,
       "selected_text_bytes": 89741551,
       "excluded_globs": ["data/*/*/repo-vul.tar.gz", "data/*/*/repo-fix.tar.gz"],
-      "acquisition_status": "Git-LFS pointers inventoried; verified selective acquisition in progress",
+      "acquisition_status": "4,521 selected text objects downloaded and verified; repository archives excluded",
+      "acquisition_manifest_sha256": "b67c1c150aebc4294e6ce2857746fe15cb2cf7df42c9b74c909bcf749b3553a1",
+      "tasks_json_sha256": "9cea452cc1e1a3703e0f60c2dfc8642430aab9f50433f976581509de58c7048f",
       "sanitized_fixture": "tests/fixtures/research/cybergym-task.json",
       "sanitized_fixture_sha256": "e6d112310ad58a7315db970eeb2e12cc8df76f9942acb051cb7ddc6b84455c39"
     },

@@ -132,7 +132,6 @@ class Knowledge:
                 filters.append('''EXISTS (SELECT 1 FROM evidence_links e WHERE e.writeup_id=w.id
                     AND e.chunk_id=ch.id AND e.validation_status=? COLLATE NOCASE)''')
                 params.append(value)
-        where = (' AND ' + ' AND '.join(filters)) if filters else ''
         quote = lambda term: '"' + term.replace('"', '""') + '"'
         base = ''' FROM writeup_chunks_fts f JOIN writeup_chunks ch ON f.rowid=ch.id
                    JOIN writeups w ON w.id=ch.writeup_id WHERE writeup_chunks_fts MATCH ?'''
@@ -140,8 +139,15 @@ class Knowledge:
                     w.writeup_type,w.indexed_at,bm25(writeup_chunks_fts,5,1) score,
                     snippet(writeup_chunks_fts,0,'','',' … ',64) excerpt'''
         with self.db.read_snapshot(), self.db._get_connection() as conn:
-            if applied_filters and conn.execute('PRAGMA user_version').fetchone()[0] < 2:
+            schema_version = conn.execute('PRAGMA user_version').fetchone()[0]
+            if applied_filters and schema_version < 2:
                 raise ValueError('Structured research filters require database schema 2 or newer')
+            default_scope = (schema_version >= 2 and writeup_type is None
+                             and 'research' not in normalized_tags and not applied_filters)
+            if default_scope:
+                filters.append('(w.document_kind IS NULL OR w.document_kind<>?)')
+                params.append('diagnostic-reference')
+            where = (' AND ' + ' AND '.join(filters)) if filters else ''
             if 'operational_stage' in applied_filters:
                 conn.create_function('_knowledge_stage_normalize', 1,
                                      lambda value: ' '.join(value.lower().split()) if value is not None else None,
@@ -150,6 +156,8 @@ class Knowledge:
                          'tags':normalized_tags, 'required':sorted(required)}
             if applied_filters:
                 query_key['structured_filters'] = applied_filters
+            if default_scope:
+                query_key['default_scope'] = 'exclude-diagnostic-reference'
             position = Cursor(self.db, query_key, cursor)
             query_terms = list(dict.fromkeys(t.strip('?!,.;:') or t for t in tokens))
             def absent(terms):
@@ -187,7 +195,8 @@ class Knowledge:
                 unmatched_query_terms=unmatched_query, unmatched_required_terms=unmatched_required,
                 unmatched_terms=list(dict.fromkeys(unmatched_query + unmatched_required)),
                 notice='Ranking is relative, not confidence. Read context before relying on an excerpt.'
-                       + (' Query broadened to any term; required_terms were preserved.' if mode=='any_terms' else ''))
+                       + (' Query broadened to any term; required_terms were preserved.' if mode=='any_terms' else '')
+                       + (' Diagnostic references excluded; use type research or a structured filter.' if default_scope else ''))
 
     def read_context(self, reference, offset=0, max_chars=8000):
         if offset < 0 or not 500 <= max_chars <= 20000:

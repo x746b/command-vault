@@ -52,6 +52,7 @@ def test_valid_bundle_facts_stages_hashes_and_no_inference(dataset, tmp_path):
     loaded = load_research_bundle(report.bundles[0])
     manifest = loaded.manifest
     assert manifest.source.name == 'cybergym'
+    assert manifest.document_kind == 'diagnostic-reference'
     assert str(manifest.source.homepage) == str(manifest.source.repository_url) == 'https://huggingface.co/datasets/sunblaze-ucb/cybergym'
     assert str(manifest.source.upstream_url).endswith(f'/tree/{REVISION}/{TASK}')
     assert manifest.source.license_expression is None
@@ -289,3 +290,89 @@ def test_runtime_excerpt_and_facts_are_bounded_but_derived_from_full_text(datase
     assert loaded.manifest.vulnerability.affected_symbols == facts['affected_symbols']
     assert len(facts['dedup_tokens']) == 128 and facts['dedup_tokens_total'] == 150 and facts['dedup_tokens_truncated']
     assert facts['vulnerability_class'] == 'heap-buffer-overflow'
+
+
+def test_metadata_controls_are_literal_escaped_counted_and_structure_preserved(dataset, tmp_path):
+    records = _records(dataset)
+    records[0]['vulnerability_description'] = 'before\x00middle\x07after\tline\nreturn\r'
+    records[0]['extra'] = {
+        'nested': ['x\x1fy', 'z\x7f', True, 3, None],
+        'allowed': '\t\n\r', 'key\x01': 'value\x0b',
+    }
+    _save(dataset, records)
+    original_metadata = (dataset / 'tasks.json').read_bytes()
+    adapter = CyberGymAdapter(dataset, REVISION)
+    first = adapter.build(tmp_path / 'first')
+    second = adapter.build(tmp_path / 'second')
+    assert _tree(first.bundles[0]) == _tree(second.bundles[0])
+    loaded = load_research_bundle(first.bundles[0])
+    metadata = loaded.manifest.source_metadata
+    assert metadata['metadata_normalization'] == {'provenance': 'deterministic', 'control_characters_escaped': 6}
+    assert metadata['vulnerability_description'] == 'before\\u0000middle\\u0007after\tline\nreturn\r'
+    assert loaded.manifest.vulnerability.summary == metadata['vulnerability_description']
+    assert metadata['extra'] == {'nested': ['x\\u001fy', 'z\\u007f', True, 3, None],
+                                 'allowed': '\t\n\r', 'key\\u0001': 'value\\u000b'}
+    forbidden = set(map(chr, [*range(9), 11, 12, *range(14, 32), 127]))
+
+    def check(value):
+        if isinstance(value, str):
+            assert not forbidden.intersection(value)
+        elif isinstance(value, dict):
+            for key, item in value.items():
+                check(key)
+                check(item)
+        elif isinstance(value, list):
+            for item in value:
+                check(item)
+
+    check(loaded.manifest.model_dump(mode='json'))
+    check(loaded.document)
+    for content in _tree(first.bundles[0]).values():
+        check(content.decode('utf-8'))
+    assert (dataset / 'tasks.json').read_bytes() == original_metadata
+    assert loaded.manifest.vulnerability.canonical_id is None
+    assert '"control_characters_escaped": 6' in loaded.document
+
+
+def test_all_forbidden_metadata_controls_have_lowercase_four_digit_escapes(dataset, tmp_path):
+    codepoints = [*range(9), 11, 12, *range(14, 32), 127]
+    records = _records(dataset)
+    records[0]['vulnerability_description'] = ' '.join(map(chr, codepoints))
+    _save(dataset, records)
+    loaded = load_research_bundle(_build(dataset, tmp_path).bundles[0])
+    assert loaded.manifest.vulnerability.summary == ' '.join(f'\\u{codepoint:04x}' for codepoint in codepoints)
+    assert loaded.manifest.source_metadata['metadata_normalization']['control_characters_escaped'] == len(codepoints)
+
+
+def test_whitespace_only_summary_is_null_while_allowed_source_whitespace_remains(dataset, tmp_path):
+    records = _records(dataset)
+    records[0]['vulnerability_description'] = ' \t\n\r '
+    _save(dataset, records)
+    loaded = load_research_bundle(_build(dataset, tmp_path).bundles[0])
+    assert loaded.manifest.vulnerability.summary is None
+    assert loaded.manifest.vulnerability.summary_provenance is None
+    assert loaded.manifest.source_metadata['vulnerability_description'] == ' \t\n\r '
+    assert loaded.manifest.source_metadata['metadata_normalization']['control_characters_escaped'] == 0
+
+
+def test_control_representation_follows_redaction_without_retaining_secrets(dataset, tmp_path):
+    secret = 'HTB{private_metadata_marker}'
+    records = _records(dataset)
+    records[0]['vulnerability_description'] = secret + '\x00'
+    _save(dataset, records)
+    adapter = CyberGymAdapter(dataset, REVISION)
+    report = adapter.build(tmp_path / 'output')
+    loaded = load_research_bundle(report.bundles[0])
+    assert loaded.manifest.vulnerability.summary == '{FLAG_REDACTED}\\u0000'
+    assert loaded.manifest.source_metadata['metadata_normalization']['control_characters_escaped'] == 1
+    assert report.redactions_by_type == {'flag': 1}
+    assert adapter.security_filter.redaction_log == []
+    assert all(secret.encode() not in value for value in _tree(report.bundles[0]).values())
+
+
+def test_colliding_escaped_metadata_keys_are_rejected_without_silent_loss(dataset, tmp_path):
+    records = _records(dataset)
+    records[0]['extra'] = {'key\x00': 'first', 'key\\u0000': 'second'}
+    _save(dataset, records)
+    with pytest.raises(ValueError, match='keys collide'):
+        _build(dataset, tmp_path)
