@@ -10,6 +10,7 @@ from types import MethodType
 from urllib.parse import quote
 
 from .documents import knowledge_chunks
+from .models import Script
 from .research import load_research_bundle, make_document_snapshot
 from .security import SecurityFilter
 
@@ -21,6 +22,10 @@ class ResearchIndexResult:
     chunks_indexed: int = 0
     vulnerabilities_indexed: int = 0
     redactions_by_type: dict[str, int] = field(default_factory=dict)
+    scripts_indexed: int = 0
+    stages_linked: int = 0
+    evidence_links: int = 0
+    validation_records: int = 0
 
 
 def _aggregate_redaction(security, source, redaction_type, detail):
@@ -60,7 +65,10 @@ class ResearchIndexer:
         redactions = Counter()
         for path in selected:
             result = self.index_bundle(path)
-            for name in ('bundles_seen', 'documents_indexed', 'chunks_indexed', 'vulnerabilities_indexed'):
+            for name in (
+                'bundles_seen', 'documents_indexed', 'chunks_indexed', 'vulnerabilities_indexed',
+                'scripts_indexed', 'stages_linked', 'evidence_links', 'validation_records',
+            ):
                 totals[name] += getattr(result, name)
             redactions.update(result.redactions_by_type)
         return ResearchIndexResult(**totals, redactions_by_type=dict(sorted(redactions.items())))
@@ -75,6 +83,21 @@ class ResearchIndexer:
         vulnerability = manifest.vulnerability
         summary = (self.security.sanitize_text(vulnerability.summary, source_file='research summary')
                    if vulnerability is not None and vulnerability.summary is not None else None)
+        scripts = []
+        for artifact, verified in zip(manifest.artifacts, loaded.artifacts, strict=True):
+            if verified.path != loaded.root / artifact.path:
+                raise ValueError('Loaded artifact path/order conflicts with the manifest')
+            if artifact.language != 'c':
+                continue
+            try:
+                text = verified.content.decode('utf-8', errors='strict')
+            except UnicodeDecodeError:
+                raise ValueError('C artifact must contain valid UTF-8') from None
+            code = self.security.sanitize_text(text, source_file='research C artifact')
+            normalized = '\n'.join(line.rstrip() for line in code.replace('\r\n', '\n').split('\n')).strip('\n')
+            scripts.append((artifact, verified.sha256, code,
+                            hashlib.sha256(code.encode('utf-8')).hexdigest(),
+                            hashlib.sha256(normalized.encode('utf-8')).hexdigest()))
         canonical_id = vulnerability.canonical_id if vulnerability is not None else None
         title = ' — '.join(part for part in (canonical_id, summary) if part)
         title = title or manifest.project or manifest.external_id
@@ -104,8 +127,10 @@ class ResearchIndexer:
                      snapshot.content_hash, 'research-bundle-v1'))
                 writeup_id = conn.execute('SELECT id FROM writeups WHERE filepath=?', (identity,)).fetchone()['id']
                 self.db._set_writeup_tags(conn, writeup_id, sorted(tags))
+                stored_chunks = []
                 for chunk in chunks:
-                    self.db.insert_chunk(writeup_id, chunk['section'], chunk['content'], chunk['chunk_index'])
+                    chunk_id = self.db.insert_chunk(writeup_id, chunk['section'], chunk['content'], chunk['chunk_index'])
+                    stored_chunks.append((chunk_id, chunk))
                 conn.execute('''INSERT INTO document_snapshots
                     (writeup_id,content_blob,compression,content_hash,uncompressed_bytes) VALUES (?,?,?,?,?)''',
                     (writeup_id, snapshot.content_blob, snapshot.compression,
@@ -121,8 +146,78 @@ class ResearchIndexer:
                          vulnerability.platform, vulnerability.subsystem, manifest.language))
                     conn.execute('INSERT INTO writeup_vulnerabilities (writeup_id,vulnerability_id) VALUES (?,?)',
                                  (writeup_id, cursor.lastrowid))
+                for artifact, source_hash, code, artifact_hash, normalized_hash in scripts:
+                    script_id = self.db.insert_script(Script(
+                        writeup_id=writeup_id, language='c', code=code, purpose=artifact.kind,
+                        source_section=f'Artifact: {artifact.path}',
+                    ))
+                    conn.execute('UPDATE scripts SET artifact_hash=?,normalized_hash=? WHERE id=?',
+                                 (artifact_hash, normalized_hash, script_id))
+                    conn.execute('''INSERT INTO evidence_links
+                        (writeup_id,script_id,evidence_role,assertion_provenance,validation_status,source_anchor_hash)
+                        VALUES (?,?,?,?,?,?)''',
+                        (writeup_id, script_id, artifact.role, 'source', artifact.validation, source_hash))
+                    conn.execute('''INSERT INTO validation_records
+                        (artifact_kind,artifact_id,validation_level,status,source_reference) VALUES (?,?,?,?,?)''',
+                        ('script', script_id, artifact.validation, artifact.validation, artifact.path))
+                stages_linked, stage_evidence = self._index_stages(conn, writeup_id, manifest, stored_chunks)
         counts = Counter(item['type'] for item in self.security.redaction_log)
-        return ResearchIndexResult(1, 1, len(chunks), int(vulnerability is not None), dict(sorted(counts.items())))
+        return ResearchIndexResult(
+            bundles_seen=1, documents_indexed=1, chunks_indexed=len(chunks),
+            vulnerabilities_indexed=int(vulnerability is not None), redactions_by_type=dict(sorted(counts.items())),
+            scripts_indexed=len(scripts), stages_linked=stages_linked,
+            evidence_links=len(scripts) + stage_evidence, validation_records=len(scripts),
+        )
+
+    @staticmethod
+    def _index_stages(conn, writeup_id, manifest, chunks):
+        roles = {
+            'reach': 'prerequisite', 'trigger': 'procedure', 'diagnose': 'signal',
+            'primitive': 'outcome', 'control': 'outcome', 'objective': 'outcome', 'remediation': 'remediation',
+        }
+        linked_stages, linked_chunks = set(), set()
+        for stage in manifest.operational_stages:
+            existing = conn.execute('''SELECT id,stage_class,description FROM operational_stages
+                WHERE canonical_name=? AND domain=?''', (stage.canonical_name, manifest.domain)).fetchone()
+            if existing is not None:
+                if existing['stage_class'] != stage.stage_class:
+                    raise ValueError('Operational stage class conflicts with existing metadata')
+                if (existing['description'] is not None and stage.description is not None
+                        and existing['description'] != stage.description):
+                    raise ValueError('Operational stage description conflicts with existing metadata')
+                stage_id = existing['id']
+                conn.execute('UPDATE operational_stages SET description=COALESCE(description,?) WHERE id=?',
+                             (stage.description, stage_id))
+            else:
+                stage_id = conn.execute('''INSERT INTO operational_stages
+                    (canonical_name,domain,stage_class,description) VALUES (?,?,?,?)''',
+                    (stage.canonical_name, manifest.domain, stage.stage_class, stage.description)).lastrowid
+            alias_normalized = ' '.join(stage.matched_alias.lower().split())
+            if not alias_normalized:
+                raise ValueError('Operational stage alias must contain non-whitespace text')
+            alias = conn.execute('''SELECT provenance FROM stage_aliases
+                WHERE stage_id=? AND alias_normalized=?''', (stage_id, alias_normalized)).fetchone()
+            if alias is not None:
+                if alias['provenance'] != stage.assertion_provenance:
+                    raise ValueError('Operational stage alias provenance conflicts with existing metadata')
+            else:
+                conn.execute('''INSERT INTO stage_aliases (stage_id,alias,alias_normalized,provenance)
+                    VALUES (?,?,?,?)''',
+                    (stage_id, stage.matched_alias, alias_normalized, stage.assertion_provenance))
+            for chunk_id, chunk in chunks:
+                if chunk['section'] not in stage.evidence_sections:
+                    continue
+                key = (stage_id, chunk_id)
+                if key in linked_chunks:
+                    continue
+                conn.execute('''INSERT INTO evidence_links
+                    (writeup_id,chunk_id,stage_id,evidence_role,assertion_provenance,validation_status,source_anchor_hash)
+                    VALUES (?,?,?,?,?,?,?)''',
+                    (writeup_id, chunk_id, stage_id, roles[stage.stage_class], stage.assertion_provenance,
+                     'source_documented', hashlib.sha256(chunk['content'].encode('utf-8')).hexdigest()))
+                linked_chunks.add(key)
+                linked_stages.add(stage_id)
+        return len(linked_stages), len(linked_chunks)
 
     @staticmethod
     def _source_collection(conn, source):

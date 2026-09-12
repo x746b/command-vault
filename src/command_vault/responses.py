@@ -168,5 +168,5 @@ class ContextPage(Record):
     offset: int
     next_offset: int | None = None
     truncated: bool = False
-    source_status: Literal['current','changed','unverified','unavailable','section_unavailable','indexed']
+    source_status: Literal['current','changed','unverified','unavailable','section_unavailable','indexed','snapshot']
     evidence_only: bool = True

@@ -1,6 +1,6 @@
 """Research storage tests use only handcrafted bundles and disposable databases."""
 
-from dataclasses import FrozenInstanceError, asdict
+from dataclasses import FrozenInstanceError, asdict, replace
 import hashlib
 import json
 import logging
@@ -11,6 +11,7 @@ from urllib.parse import quote
 import pytest
 
 import command_vault.database as database_module
+import command_vault.research_indexer as indexer_module
 from command_vault.database import Database
 from command_vault.knowledge import Knowledge
 from command_vault.research import DocumentSnapshot, read_document_snapshot
@@ -71,6 +72,7 @@ def test_full_document_storage_search_snapshot_provenance_and_stats(db, bundle):
     assert asdict(result) == {
         'bundles_seen': 1, 'documents_indexed': 1, 'chunks_indexed': 2,
         'vulnerabilities_indexed': 1, 'redactions_by_type': {},
+        'scripts_indexed': 0, 'stages_linked': 0, 'evidence_links': 0, 'validation_records': 0,
     }
     with pytest.raises(FrozenInstanceError):
         result.documents_indexed = 2
@@ -323,3 +325,219 @@ def test_result_collection_defaults_are_independent():
     second = ResearchIndexResult()
     first.redactions_by_type['flag'] = 1
     assert second.redactions_by_type == {}
+
+
+def add_artifacts_and_stages(root, manifest):
+    raw_code = b'\r\n  \r\n  /* HTB{artifact_private} */  \r\nint main(void) { return 0; }  \r\n \t\r\n'
+    trace = b'Harmless fixture sanitizer trace with a documented diagnostic marker.\n'
+    patch = b'Harmless fixture patch data describing the source remediation evidence.\n'
+    (root / 'artifacts').mkdir()
+    manifest['artifacts'] = []
+    for name, content, kind, role, language in [
+        ('pov.c', raw_code, 'reproducer', 'procedure', 'c'),
+        ('trace.txt', trace, 'runtime-evidence', 'signal', None),
+        ('patch.diff', patch, 'patch', 'remediation', None),
+    ]:
+        path = f'artifacts/{name}'
+        (root / path).write_bytes(content)
+        manifest['artifacts'].append({
+            'path': path, 'kind': kind, 'role': role, 'language': language,
+            'sha256': hashlib.sha256(content).hexdigest(), 'validation': 'source_documented',
+        })
+    with (root / 'document.md').open('a', encoding='utf-8') as source:
+        source.write('\n## Sanitizer trace\n\n' + trace.decode() + '\n## Patch\n\n' + patch.decode())
+    manifest['operational_stages'] = []
+    for stage_class, section in [
+        ('reach', 'Overview'), ('trigger', 'Details'), ('diagnose', 'Sanitizer trace'),
+        ('primitive', 'Details'), ('control', 'Details'), ('objective', 'Details'),
+        ('remediation', 'Patch'), ('diagnose', 'Missing exact section'),
+    ]:
+        manifest['operational_stages'].append({
+            'canonical_name': f'{stage_class} {section}', 'stage_class': stage_class,
+            'description': f'Documented {section} stage.', 'matched_alias': section,
+            'assertion_provenance': 'deterministic', 'evidence_sections': [section],
+        })
+    # Equivalent normalized aliases reuse their row; another alias shares evidence.
+    manifest['operational_stages'].append({**manifest['operational_stages'][0], 'matched_alias': '  OVERVIEW  '})
+    manifest['operational_stages'].append({**manifest['operational_stages'][0], 'matched_alias': 'Other overview alias'})
+    write_manifest(root, manifest)
+    return raw_code
+
+
+@pytest.fixture
+def artifact_bundle(bundle):
+    root, manifest = bundle
+    code = add_artifacts_and_stages(root, manifest)
+    return root, manifest, code
+
+
+def test_artifact_script_hashes_source_anchor_validation_stages_and_stats(db, artifact_bundle):
+    root, manifest, raw_code = artifact_bundle
+    result = ResearchIndexer(db).index_bundle(root)
+    assert (result.scripts_indexed, result.stages_linked, result.evidence_links, result.validation_records) == (1, 7, 8, 1)
+    assert result.redactions_by_type == {'flag': 1}
+    stored_code = raw_code.decode().replace('HTB{artifact_private}', '{FLAG_REDACTED}')
+    normalized = '  /* {FLAG_REDACTED} */\nint main(void) { return 0; }'
+    with db._get_connection() as conn:
+        script = conn.execute('SELECT * FROM scripts').fetchone()
+        assert script['code'] == stored_code
+        assert script['language'] == 'c'
+        assert script['purpose'] == 'reproducer'
+        assert script['source_section'] == 'Artifact: artifacts/pov.c'
+        assert script['artifact_hash'] == hashlib.sha256(stored_code.encode()).hexdigest()
+        assert script['normalized_hash'] == hashlib.sha256(normalized.encode()).hexdigest()
+        assert conn.execute('SELECT COUNT(*) FROM scripts').fetchone()[0] == 1
+        evidence = conn.execute('SELECT * FROM evidence_links WHERE script_id IS NOT NULL').fetchone()
+        assert evidence['writeup_id'] == script['writeup_id']
+        assert evidence['script_id'] == script['id']
+        assert evidence['evidence_role'] == 'procedure'
+        assert evidence['assertion_provenance'] == 'source'
+        assert evidence['validation_status'] == 'source_documented'
+        assert evidence['source_anchor_hash'] == hashlib.sha256(raw_code).hexdigest()
+        assert evidence['source_anchor_hash'] != script['artifact_hash']
+        validation = conn.execute('SELECT * FROM validation_records').fetchone()
+        assert (validation['artifact_kind'], validation['artifact_id']) == ('script', script['id'])
+        assert validation['validation_level'] == validation['status'] == 'source_documented'
+        assert validation['source_reference'] == manifest['artifacts'][0]['path']
+        assert validation['validated_at'] is None
+        role_map = {'reach': 'prerequisite', 'trigger': 'procedure', 'diagnose': 'signal',
+                    'primitive': 'outcome', 'control': 'outcome', 'objective': 'outcome', 'remediation': 'remediation'}
+        rows = conn.execute('''SELECT e.*,s.stage_class,c.content FROM evidence_links e
+            JOIN operational_stages s ON s.id=e.stage_id JOIN writeup_chunks c ON c.id=e.chunk_id''').fetchall()
+        assert len(rows) == 7
+        for row in rows:
+            assert row['evidence_role'] == role_map[row['stage_class']]
+            assert row['assertion_provenance'] == 'deterministic'
+            assert row['validation_status'] == 'source_documented'
+            assert row['source_anchor_hash'] == hashlib.sha256(row['content'].encode()).hexdigest()
+        assert conn.execute('SELECT COUNT(*) FROM operational_stages').fetchone()[0] == 8
+        assert conn.execute('SELECT COUNT(*) FROM stage_aliases').fetchone()[0] == 9
+        assert conn.execute('''SELECT COUNT(*) FROM evidence_links WHERE stage_id IN
+            (SELECT id FROM operational_stages WHERE canonical_name=?)''', ('diagnose Missing exact section',)).fetchone()[0] == 0
+        assert conn.execute('PRAGMA foreign_key_check').fetchall() == []
+    stats = db.get_stats()
+    assert stats.scripts['total'] == 1
+    assert stats.research['operational_stages'] == 8
+    assert stats.research['evidence_links'] == 8
+    assert stats.research['validation_records'] == 1
+    assert stats.research['validation_by_status'] == {'source_documented': 1}
+
+
+def test_artifact_reindex_rebuilds_evidence_without_orphans_and_preserves_stages(db, artifact_bundle):
+    root, _, _ = artifact_bundle
+    indexer = ResearchIndexer(db)
+    first = indexer.index_bundle(root)
+    with db._get_connection() as conn:
+        stages = [tuple(row) for row in conn.execute('SELECT * FROM operational_stages ORDER BY id')]
+        aliases = [tuple(row) for row in conn.execute('SELECT * FROM stage_aliases ORDER BY stage_id,alias_normalized')]
+    second = indexer.index_bundle(root)
+    assert first == second
+    with db._get_connection() as conn:
+        assert [tuple(row) for row in conn.execute('SELECT * FROM operational_stages ORDER BY id')] == stages
+        assert [tuple(row) for row in conn.execute('SELECT * FROM stage_aliases ORDER BY stage_id,alias_normalized')] == aliases
+        assert conn.execute('SELECT COUNT(*) FROM scripts').fetchone()[0] == 1
+        assert conn.execute('SELECT COUNT(*) FROM evidence_links').fetchone()[0] == 8
+        assert conn.execute('SELECT COUNT(*) FROM validation_records').fetchone()[0] == 1
+        assert conn.execute('''SELECT COUNT(*) FROM validation_records v LEFT JOIN scripts s
+            ON s.id=v.artifact_id WHERE v.artifact_kind=? AND s.id IS NULL''', ('script',)).fetchone()[0] == 0
+        assert conn.execute('PRAGMA foreign_key_check').fetchall() == []
+
+
+@pytest.mark.parametrize('case', ['class', 'description', 'provenance', 'empty-alias'])
+def test_stage_conflicts_roll_back_script_validation_and_previous_state(db, artifact_bundle, case):
+    root, manifest, _ = artifact_bundle
+    indexer = ResearchIndexer(db)
+    indexer.index_bundle(root)
+    before = stored_state(db)
+    stage = manifest['operational_stages'][0]
+    if case == 'class':
+        stage['stage_class'] = 'control'
+    elif case == 'description':
+        stage['description'] = 'Conflicting description'
+    elif case == 'provenance':
+        stage['assertion_provenance'] = 'inferred'
+    else:
+        stage['matched_alias'] = '  \t '
+    write_manifest(root, manifest)
+    with pytest.raises(ValueError, match='conflict|alias'):
+        indexer.index_bundle(root)
+    assert stored_state(db) == before
+
+
+def test_stage_null_description_can_be_filled_and_later_omitted(db, artifact_bundle):
+    root, manifest, _ = artifact_bundle
+    indexer = ResearchIndexer(db)
+    for stage in manifest['operational_stages']:
+        stage['description'] = None
+    write_manifest(root, manifest)
+    indexer.index_bundle(root)
+    manifest['operational_stages'][0]['description'] = 'Curated description'
+    write_manifest(root, manifest)
+    indexer.index_bundle(root)
+    manifest['operational_stages'][0]['description'] = None
+    write_manifest(root, manifest)
+    indexer.index_bundle(root)
+    with db._get_connection() as conn:
+        assert conn.execute('SELECT description FROM operational_stages WHERE canonical_name=?',
+                            (manifest['operational_stages'][0]['canonical_name'],)).fetchone()[0] == 'Curated description'
+
+
+@pytest.mark.parametrize('valid_digest', [False, True])
+def test_invalid_artifact_digest_or_utf8_never_partially_writes(db, artifact_bundle, valid_digest):
+    root, manifest, _ = artifact_bundle
+    indexer = ResearchIndexer(db)
+    indexer.index_bundle(root)
+    before = stored_state(db)
+    data = b'private-artifact-content\xff'
+    (root / manifest['artifacts'][0]['path']).write_bytes(data)
+    if valid_digest:
+        manifest['artifacts'][0]['sha256'] = hashlib.sha256(data).hexdigest()
+        write_manifest(root, manifest)
+    with pytest.raises(ValueError, match='UTF-8' if valid_digest else 'SHA-256') as error:
+        indexer.index_bundle(root)
+    assert 'private-artifact-content' not in str(error.value)
+    assert stored_state(db) == before
+
+
+def test_loaded_artifact_order_is_checked_without_reopening_paths(db, artifact_bundle, monkeypatch):
+    root, _, _ = artifact_bundle
+    loaded = indexer_module.load_research_bundle(root)
+    monkeypatch.setattr(indexer_module, 'load_research_bundle', lambda _: replace(loaded, artifacts=tuple(reversed(loaded.artifacts))))
+    before = stored_state(db)
+    with pytest.raises(ValueError, match='path/order'):
+        ResearchIndexer(db).index_bundle(root)
+    assert stored_state(db) == before
+
+
+def test_script_insertion_failure_rolls_back_existing_artifact_evidence(db, artifact_bundle, monkeypatch):
+    root, _, _ = artifact_bundle
+    indexer = ResearchIndexer(db)
+    indexer.index_bundle(root)
+    before = stored_state(db)
+    original = db.insert_script
+
+    def fail_after_insert(script):
+        original(script)
+        raise RuntimeError('Injected script insertion failure')
+
+    monkeypatch.setattr(db, 'insert_script', fail_after_insert)
+    with pytest.raises(RuntimeError, match='Injected'):
+        indexer.index_bundle(root)
+    assert stored_state(db) == before
+
+
+def test_directory_aggregates_artifact_stage_counts_and_redaction_secrecy(db, tmp_path, caplog):
+    collection = tmp_path / 'artifact-collection'
+    for name in ('first', 'second'):
+        root, manifest = make_bundle(collection / name, external_id=name)
+        add_artifacts_and_stages(root, manifest)
+    indexer = ResearchIndexer(db)
+    with caplog.at_level(logging.DEBUG):
+        result = indexer.index_directory(collection)
+    assert result.scripts_indexed == result.validation_records == 2
+    assert result.stages_linked == 14
+    assert result.evidence_links == 16
+    assert result.redactions_by_type == {'flag': 2}
+    output = stored_state(db) + caplog.text + repr(result) + repr(indexer.security.redaction_log)
+    assert 'HTB{artifact_private}' not in output
+    assert all(set(entry) == {'type'} for entry in indexer.security.redaction_log)

@@ -109,11 +109,29 @@ delegated further or created commits.
   `core_pattern privilege escalation` returned relevant research records.
 - Integrated adapter/storage suite: 554 tests passed in 3.28 seconds.
 
-Follow-on Phase 2 slices still need to persist standalone C artifacts and stage
-evidence, serve research context from embedded snapshots, and automate
-create-only candidate construction. Until snapshot reads land, research
-`read_context` correctly falls back to indexed content with source status
-`unavailable`; it never follows the synthetic research identity as a file path.
+The follow-on slices now also persist all 27 standalone C PoVs, eight canonical
+operational stages, 75 source-heading aliases, 238 evidence links, and 27
+source-documented validation records. Script hashes distinguish verified source
+bytes, stored sanitized bytes, and conservative normalized bytes.
+
+Research `read_context` now verifies and serves the embedded snapshot with
+source status `snapshot`; it never stats or opens the synthetic research
+identity. The real CVE context and complete C script remain accessible from the
+candidate after adapter staging is no longer required.
+
+The combined suite passes 592 tests. The existing Sherlock development rubric
+remains 15/16 supported cases at top five for both baseline and candidate, with
+no relevant-evidence rank changes; three non-evidence result-order positions
+changed because FTS corpus statistics changed. Candidate median search latency
+was 45.017 ms versus 42.119 ms at baseline, and maximum was 131.557 ms versus
+122.004 ms. This is recorded for later broader retrieval acceptance, not treated
+as a benchmark score.
+
+The enriched candidate is 27 research documents on top of the 859-document
+baseline and has SHA-256
+`717d7ae7823a67ed6425a1c3f1a38e2769bb104b3a91783effb28e04b74a375a`.
+Create-only candidate construction is the remaining automation slice; no live
+database migration or promotion has occurred.
 
 ## Acceptance notes
 

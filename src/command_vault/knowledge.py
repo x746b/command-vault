@@ -10,6 +10,7 @@ from .documents import sections
 from .security import SecurityFilter
 from .pagination import Cursor, paginate
 from .responses import SearchPage, KnowledgeHit, KnowledgePage, ContextPage
+from .research import DocumentSnapshot, read_document_snapshot
 
 
 def bounded_page(rows, query='', max_chars=12000, **kwargs):
@@ -124,7 +125,8 @@ class Knowledge:
             return ContextPage(reference=reference, source={'filename':Path(row['source_file'] or 'history').name,
                 'section':'Indexed shell history'}, content=content[offset:end], offset=offset,
                 next_offset=end if end<len(content) else None, truncated=end<len(content), source_status='indexed')
-        with self.db._get_connection() as conn:
+        snapshot = None
+        with self.db.read_snapshot(), self.db._get_connection() as conn:
             if kind == 'document':
                 row = conn.execute('SELECT NULL section, w.* FROM writeups w WHERE w.id=?', (int(identifier),)).fetchone()
                 if row is not None:
@@ -136,30 +138,58 @@ class Knowledge:
                                         'script': ('scripts','source_section','code')}[kind]
                 row = conn.execute(f'''SELECT x.{section} section,x.{field} stored,w.* FROM {table} x
                             JOIN writeups w ON w.id=x.writeup_id WHERE x.id=?''', (int(identifier),)).fetchone()
+            if row is not None and row['writeup_type'] == 'research':
+                if conn.execute('PRAGMA user_version').fetchone()[0] < 2:
+                    raise ValueError('Research snapshots require database schema 2 or newer')
+                available = conn.execute(
+                    'SELECT 1 FROM sqlite_master WHERE type=? AND name=?',
+                    ('table', 'document_snapshots'),
+                ).fetchone()
+                if not available:
+                    raise ValueError('Research document snapshot is missing')
+                snapshot_row = conn.execute('''SELECT content_blob,compression,content_hash,uncompressed_bytes
+                    FROM document_snapshots WHERE writeup_id=?''', (row['id'],)).fetchone()
+                if snapshot_row is None:
+                    raise ValueError('Research document snapshot is missing')
+                snapshot = DocumentSnapshot(**dict(snapshot_row))
         if not row:
             raise ValueError('Reference not found; search again after a reindex')
         if expected_doc is not None and (int(expected_doc) != row['id'] or expected_revision != (row['content_hash'] or 'legacy')):
             raise ValueError('Reference belongs to a different indexed revision; search again')
         source = {'document_id':row['id'], 'filename':row['filename'], 'section':row['section'],
                   'indexed_revision':row['content_hash']}
-        path = Path(row['filepath'])
         content = row['stored']
         status = 'unavailable'
-        if path.is_file():
-            if path.stat().st_size > 20_000_000:
-                raise ValueError('Source exceeds 20 MB; use the bounded indexed excerpt')
-            data = path.read_bytes()
-            digest = hashlib.sha256(data).hexdigest()
-            status = 'current' if digest == row['content_hash'] else 'changed' if row['content_hash'] else 'unverified'
-            source['current_revision'] = digest
-            sanitized = SecurityFilter().sanitize_text(data.decode('utf-8', errors='replace'))
-            matches = ([{'content':sanitized,'line_start':1}] if kind=='document' else
-                       [s for s in sections(sanitized) if s['section'] == row['section']])
+        if snapshot is not None:
+            if snapshot.content_hash != row['content_hash']:
+                raise ValueError('Research snapshot hash does not match the indexed revision')
+            document = read_document_snapshot(snapshot, max_uncompressed_bytes=20_000_000)
+            source['current_revision'] = snapshot.content_hash
+            status = 'snapshot'
+            matches = ([{'content': document, 'line_start': 1}] if kind == 'document' else
+                       [section for section in sections(document) if section['section'] == row['section']])
             if matches:
                 content = '\n\n'.join(s['content'] for s in matches)
                 source['line_start'] = matches[0]['line_start']
             else:
                 status = 'section_unavailable'
+        else:
+            path = Path(row['filepath'])
+            if path.is_file():
+                if path.stat().st_size > 20_000_000:
+                    raise ValueError('Source exceeds 20 MB; use the bounded indexed excerpt')
+                data = path.read_bytes()
+                digest = hashlib.sha256(data).hexdigest()
+                status = 'current' if digest == row['content_hash'] else 'changed' if row['content_hash'] else 'unverified'
+                source['current_revision'] = digest
+                sanitized = SecurityFilter().sanitize_text(data.decode('utf-8', errors='replace'))
+                matches = ([{'content':sanitized,'line_start':1}] if kind=='document' else
+                           [s for s in sections(sanitized) if s['section'] == row['section']])
+                if matches:
+                    content = '\n\n'.join(s['content'] for s in matches)
+                    source['line_start'] = matches[0]['line_start']
+                else:
+                    status = 'section_unavailable'
         source['image_references_present'] = bool(re.search(r'!\[|<img\b', content))
         end = min(len(content), offset + max_chars)
         return ContextPage(reference=reference, source=source, content=content[offset:end],
