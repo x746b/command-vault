@@ -1,5 +1,7 @@
 """Read-only research metadata and revision-bound evidence references."""
 
+import json
+
 from .responses import (
     MitigationSummary, ProfileEvidence, ProfileSource, StageSummary,
     VulnerabilityProfile, VulnerabilityRecord,
@@ -30,6 +32,24 @@ def _normalize_stage(value):
     return ' '.join(value.lower().split()) if value is not None else None
 
 
+def _affected_symbols(value):
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return []
+    if not isinstance(value, str):
+        raise ValueError('Affected symbols metadata must be a JSON string list or legacy text')
+    try:
+        symbols = json.loads(value)
+    except (ValueError, RecursionError):
+        # Brackets, braces, or quotes indicate structured metadata that must not
+        # silently degrade into a purported legacy symbol after a parse failure.
+        if value.lstrip().startswith(('[', '{', '"')):
+            raise ValueError('Affected symbols metadata contains malformed JSON') from None
+        return [value]
+    if not isinstance(symbols, list) or any(not isinstance(symbol, str) or not symbol.strip() for symbol in symbols):
+        raise ValueError('Affected symbols metadata must be a JSON list of nonblank strings')
+    return symbols
+
+
 class ResearchProfiles:
     def __init__(self, db):
         self.db = db
@@ -56,11 +76,13 @@ class ResearchProfiles:
                 matches = []
                 for row in rows:
                     vulnerability_id = row['id']
+                    metadata = dict(row)
+                    metadata['affected_symbols'] = _affected_symbols(metadata['affected_symbols'])
                     evidence, more = self._evidence(conn, vulnerability_id, remaining)
                     remaining -= len(evidence)
                     truncated = truncated or more
                     matches.append(VulnerabilityRecord(
-                        **dict(row), sources=self._sources(conn, vulnerability_id),
+                        **metadata, sources=self._sources(conn, vulnerability_id),
                         mitigations=self._mitigations(conn, vulnerability_id),
                         operational_stages=self._stages(conn, vulnerability_id), evidence=evidence,
                     ))

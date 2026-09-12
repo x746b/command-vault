@@ -4,6 +4,7 @@ from collections import Counter
 from copy import copy
 from dataclasses import dataclass, field
 import hashlib
+import json
 from pathlib import Path
 import re
 from types import MethodType
@@ -175,12 +176,13 @@ class ResearchIndexer:
                 if vulnerability is not None:
                     cursor = conn.execute('''INSERT INTO vulnerabilities
                         (canonical_id,external_task_id,project_name,summary,summary_provenance,
-                         vulnerability_class,class_provenance,sanitizer,architecture,platform,subsystem,language)
-                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)''',
+                         vulnerability_class,class_provenance,sanitizer,architecture,platform,subsystem,language,affected_symbols)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)''',
                         (canonical_id, manifest.external_id, manifest.project, summary,
                          vulnerability.summary_provenance, vulnerability.vulnerability_class,
                          vulnerability.class_provenance, vulnerability.sanitizer, vulnerability.architecture,
-                         vulnerability.platform, vulnerability.subsystem, manifest.language))
+                         vulnerability.platform, vulnerability.subsystem, manifest.language,
+                         json.dumps(vulnerability.affected_symbols, ensure_ascii=False) if vulnerability.affected_symbols else None))
                     vulnerability_id = cursor.lastrowid
                     conn.execute('INSERT INTO writeup_vulnerabilities (writeup_id,vulnerability_id) VALUES (?,?)',
                                  (writeup_id, vulnerability_id))

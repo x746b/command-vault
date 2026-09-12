@@ -64,6 +64,7 @@ def test_valid_bundle_facts_stages_hashes_and_no_inference(dataset, tmp_path):
     assert error['dedup_tokens'] == ['parse_record--consume_record']
     assert error['frames'][0] == {'index': 0, 'function': 'parse_record', 'path': '/src/fixture/parser.c', 'line': 42, 'column': 7}
     assert error['affected_symbols'] == ['parse_record', 'consume_record']
+    assert manifest.vulnerability.affected_symbols == error['affected_symbols']
     assert manifest.vulnerability.vulnerability_class == 'use-of-uninitialized-value'
     assert manifest.vulnerability.class_provenance.value == 'deterministic'
     assert manifest.vulnerability.summary_provenance.value == 'source'
@@ -285,5 +286,6 @@ def test_runtime_excerpt_and_facts_are_bounded_but_derived_from_full_text(datase
     facts = loaded.manifest.source_metadata['derived_error']
     assert len(facts['frames']) == 256 and facts['frames_total'] == 300 and facts['frames_truncated']
     assert len(facts['affected_symbols']) == 256 and facts['affected_symbols_total'] == 300 and facts['affected_symbols_truncated']
+    assert loaded.manifest.vulnerability.affected_symbols == facts['affected_symbols']
     assert len(facts['dedup_tokens']) == 128 and facts['dedup_tokens_total'] == 150 and facts['dedup_tokens_truncated']
     assert facts['vulnerability_class'] == 'heap-buffer-overflow'

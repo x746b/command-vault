@@ -114,6 +114,26 @@ def test_vulnerability_accepts_python_name_and_serializes_alias():
     assert json.loads(model.model_dump_json())["class"] == "example"
 
 
+def test_affected_symbols_default_order_round_trip_and_schema():
+    first = ResearchVulnerability()
+    second = ResearchVulnerability()
+    assert first.affected_symbols == second.affected_symbols == []
+    first.affected_symbols.append('first')
+    assert second.affected_symbols == []
+    symbols = ['parse<std::pair<int, int>>', 'consume_record', '日本語_symbol']
+    vulnerability = ResearchVulnerability(affected_symbols=symbols)
+    assert ResearchVulnerability.model_validate_json(vulnerability.model_dump_json()).affected_symbols == symbols
+    schema = json.loads(SCHEMA_PATH.read_text())['$defs']['ResearchVulnerability']['properties']['affected_symbols']
+    assert schema['uniqueItems'] is True
+    assert schema['items'] == {'minLength': 1, 'pattern': r'\S', 'type': 'string'}
+
+
+@pytest.mark.parametrize('symbols', [[''], ['   '], ['\t\n'], ['same', 'same'], [1], None, 'single'])
+def test_invalid_affected_symbols_are_rejected(symbols):
+    with pytest.raises(ValidationError, match='affected_symbols'):
+        ResearchVulnerability(affected_symbols=symbols)
+
+
 def test_research_writeup_type_preserves_current_values():
     assert [item.value for item in WriteupType] == ["box", "challenge", "sherlock", "research"]
     assert WriteupType("research") is WriteupType.RESEARCH

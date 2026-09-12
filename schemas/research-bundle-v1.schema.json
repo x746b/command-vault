@@ -438,6 +438,16 @@
             }
           ],
           "default": null
+        },
+        "affected_symbols": {
+          "items": {
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
+          },
+          "title": "Affected Symbols",
+          "type": "array",
+          "uniqueItems": true
         }
       },
       "title": "ResearchVulnerability",

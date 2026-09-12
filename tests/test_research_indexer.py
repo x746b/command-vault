@@ -282,6 +282,30 @@ def test_unknown_vulnerability_remains_absent_and_project_is_title(db, tmp_path)
         assert conn.execute('SELECT title FROM writeups').fetchone()[0] == 'Fixture project'
 
 
+def test_affected_symbols_are_ordered_json_or_null_and_reindex_idempotently(db, bundle):
+    root, manifest = bundle
+    indexer = ResearchIndexer(db)
+    indexer.index_bundle(root)
+    with db._get_connection() as conn:
+        assert conn.execute('SELECT affected_symbols FROM vulnerabilities').fetchone()[0] is None
+    symbols = ['parse<std::pair<int, int>>', 'consume_record', '日本語_symbol']
+    manifest['vulnerability']['affected_symbols'] = symbols
+    write_manifest(root, manifest)
+    first = indexer.index_bundle(root)
+    assert indexer.index_bundle(root) == first
+    with db._get_connection() as conn:
+        rows = conn.execute('SELECT affected_symbols FROM vulnerabilities').fetchall()
+        assert len(rows) == 1
+        assert rows[0][0] == json.dumps(symbols, ensure_ascii=False)
+        assert json.loads(rows[0][0]) == symbols
+        assert conn.execute('PRAGMA user_version').fetchone()[0] == 2
+    manifest['vulnerability']['affected_symbols'] = []
+    write_manifest(root, manifest)
+    indexer.index_bundle(root)
+    with db._get_connection() as conn:
+        assert conn.execute('SELECT affected_symbols FROM vulnerabilities').fetchone()[0] is None
+
+
 def test_rebuild_removes_all_child_references_and_preserves_global_metadata(db, bundle):
     indexer = ResearchIndexer(db)
     root, manifest = bundle

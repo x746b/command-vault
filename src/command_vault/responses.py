@@ -1,7 +1,7 @@
 """Validated result records for the public retrieval contract."""
 from typing import Generic, Literal, TypeVar
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class Record(BaseModel):
@@ -69,13 +69,20 @@ class VulnerabilityRecord(Record):
     platform: str | None = None
     subsystem: str | None = None
     language: str | None = None
-    affected_symbols: str | None = None
+    affected_symbols: list[str] = Field(default_factory=list)
     introduced_revision: str | None = None
     fixed_revision: str | None = None
     sources: list[ProfileSource] = Field(default_factory=list)
     operational_stages: list[StageSummary] = Field(default_factory=list)
     mitigations: list[MitigationSummary] = Field(default_factory=list)
     evidence: list[ProfileEvidence] = Field(default_factory=list)
+
+    @field_validator('affected_symbols', mode='before')
+    @classmethod
+    def nonblank_affected_symbols(cls, value):
+        if not isinstance(value, list) or any(not isinstance(symbol, str) or not symbol.strip() for symbol in value):
+            raise ValueError('Affected symbols must be a list of nonblank strings')
+        return value
 
 
 class VulnerabilityProfile(Record):

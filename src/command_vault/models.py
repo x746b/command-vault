@@ -174,6 +174,16 @@ class ResearchVulnerability(_ResearchContract):
     subsystem: Optional[str] = None
     summary: Optional[str] = None
     summary_provenance: Optional[AssertionProvenance] = None
+    affected_symbols: list[Annotated[str, Field(min_length=1, pattern=r"\S")]] = Field(
+        default_factory=list, json_schema_extra={"uniqueItems": True}
+    )
+
+    @field_validator("affected_symbols")
+    @classmethod
+    def unique_affected_symbols(cls, value):
+        if len(value) != len(set(value)):
+            raise ValueError("Affected symbols must not contain exact duplicates")
+        return value
 
 
 class ResearchArtifact(_ResearchContract):

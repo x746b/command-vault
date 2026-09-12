@@ -251,7 +251,7 @@ class CyberGymAdapter(ExploitGymKernelCTFAdapter):
             'operational_stages': stages,
             'vulnerability': {'summary': summary, 'summary_provenance': 'source' if summary else None,
                 'class': error['vulnerability_class'], 'class_provenance': 'deterministic' if error['vulnerability_class'] else None,
-                'sanitizer': error['sanitizer'], 'platform': 'linux'},
+                'sanitizer': error['sanitizer'], 'platform': 'linux', 'affected_symbols': error['affected_symbols']},
         })
         json_text = lambda value: json.dumps(value, sort_keys=True, indent=2, ensure_ascii=False, allow_nan=False)
         title = ' '.join(f'{source_record["project_name"]}: {source_record["task_id"]}'.split())

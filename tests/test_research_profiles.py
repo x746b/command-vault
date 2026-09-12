@@ -8,7 +8,7 @@ from pydantic import ValidationError
 
 from command_vault.database import Database, SCHEMA
 from command_vault.profiles import ResearchProfiles
-from command_vault.responses import OperationalStageProfile, StageEdgeSummary, VulnerabilityProfile
+from command_vault.responses import OperationalStageProfile, StageEdgeSummary, VulnerabilityProfile, VulnerabilityRecord
 
 
 @pytest.fixture
@@ -74,7 +74,7 @@ def test_canonical_and_task_matches_are_exact_case_insensitive_and_ordered(db):
 def test_sources_mitigations_stages_evidence_and_revision_bound_references(db):
     match = ResearchProfiles(db).get_vulnerability('task-z').matches[0]
     assert match.summary == 'Source summary' and match.summary_provenance == 'source'
-    assert match.affected_symbols == 'fixture_symbol'
+    assert match.affected_symbols == ['fixture_symbol']
     assert [source.source_name for source in match.sources] == ['Alpha', 'Zeta']
     assert [source.reference for source in match.sources] == ['document:1@1.abc123', 'document:2@2.legacy']
     assert match.sources[0].revision == 'rev-one'
@@ -171,6 +171,54 @@ def test_readonly_authorizer_blocks_content_and_writes_and_bytes_stay_unchanged(
 def test_profile_records_reject_unknown_response_fields():
     with pytest.raises(ValidationError):
         VulnerabilityProfile(identifier='x', total_matches=0, truncated=False, unknown='data')
+
+
+@pytest.mark.parametrize('stored,expected', [
+    ('["last_symbol", "first_symbol", "last_symbol"]', ['last_symbol', 'first_symbol', 'last_symbol']),
+    ('fixture_symbol', ['fixture_symbol']), ('legacy::operator[]', ['legacy::operator[]']),
+    (None, []), ('', []), ('  \t ', []), ('[]', []),
+])
+def test_affected_symbols_decoding_preserves_order_and_legacy_metadata(db, stored, expected):
+    with db._get_connection() as conn:
+        conn.execute('UPDATE vulnerabilities SET affected_symbols=? WHERE id=?', (stored, 5))
+        conn.commit()
+    before = db.db_path.read_bytes()
+    result = ResearchProfiles(Database(str(db.db_path), readonly=True)).get_vulnerability('task-z')
+    assert result.matches[0].affected_symbols == expected
+    assert result.model_dump()['matches'][0]['affected_symbols'] == expected
+    assert 'PRIVATE STORED CONTENT' not in result.model_dump_json()
+    assert db.db_path.read_bytes() == before
+
+
+@pytest.mark.parametrize('stored', [
+    '["private-symbol"', '["private-symbol", 2]', '["private-symbol", null]',
+    '["private-symbol", ""]', '["private-symbol", "  "]', '{"private-symbol": 1}',
+    '"private-symbol"', '"private-symbol', '["private-symbol"] trailing', 'null', '42', b'private-symbol',
+])
+def test_invalid_affected_symbols_fail_closed_without_echoing_metadata(db, stored):
+    with db._get_connection() as conn:
+        conn.execute('UPDATE vulnerabilities SET affected_symbols=? WHERE id=?', (stored, 5))
+        conn.commit()
+    before = db.db_path.read_bytes()
+    with pytest.raises(ValueError, match='Affected symbols') as error:
+        ResearchProfiles(Database(str(db.db_path), readonly=True)).get_vulnerability('task-z')
+    assert 'private-symbol' not in str(error.value)
+    assert db.db_path.read_bytes() == before
+
+
+@pytest.mark.parametrize('symbols', [None, 'plain_symbol', [1], [b'bytes'], [''], [' \t '], ('symbol',)])
+def test_affected_symbols_response_rejects_nonlist_or_invalid_members(symbols):
+    with pytest.raises(ValidationError):
+        VulnerabilityRecord(id=1, affected_symbols=symbols)
+
+
+def test_affected_symbols_response_defaults_are_independent_and_schema_is_array():
+    first = VulnerabilityRecord(id=1)
+    second = VulnerabilityRecord(id=2)
+    first.affected_symbols.append('symbol')
+    assert second.affected_symbols == []
+    schema = VulnerabilityRecord.model_json_schema()['properties']['affected_symbols']
+    assert schema['type'] == 'array' and schema['items'] == {'type': 'string'}
 
 
 @pytest.fixture
