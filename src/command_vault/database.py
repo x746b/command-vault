@@ -1448,6 +1448,7 @@ class Database:
             'operational_stages': 0,
             'evidence_links': 0,
             'validation_records': 0,
+            'mitigations': 0,
             'by_source': {},
             'by_domain': {},
             'validation_by_status': {},
@@ -1457,7 +1458,7 @@ class Database:
         result['documents'] = document_count
         for table in (
             'source_collections', 'vulnerabilities', 'operational_stages',
-            'evidence_links', 'validation_records',
+            'evidence_links', 'validation_records', 'mitigations',
         ):
             result[table] = conn.execute(f'SELECT COUNT(*) FROM {table}').fetchone()[0]
         result['by_source'] = {

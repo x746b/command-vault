@@ -73,6 +73,7 @@ def test_full_document_storage_search_snapshot_provenance_and_stats(db, bundle):
         'bundles_seen': 1, 'documents_indexed': 1, 'chunks_indexed': 2,
         'vulnerabilities_indexed': 1, 'redactions_by_type': {},
         'scripts_indexed': 0, 'stages_linked': 0, 'evidence_links': 0, 'validation_records': 0,
+        'mitigations_indexed': 0, 'mitigation_links': 0,
     }
     with pytest.raises(FrozenInstanceError):
         result.documents_indexed = 2
@@ -325,6 +326,149 @@ def test_result_collection_defaults_are_independent():
     second = ResearchIndexResult()
     first.redactions_by_type['flag'] = 1
     assert second.redactions_by_type == {}
+
+
+def add_mitigations(root, manifest):
+    manifest['mitigations'] = [
+        {'canonical_name': 'KASLR', 'raw_label': 'KASLR', 'state': 'bypassed',
+         'assertion_provenance': 'deterministic', 'evidence_sections': ['Details', 'Overview']},
+        {'canonical_name': 'SMEP', 'raw_label': 'SMEP', 'state': 'bypassed',
+         'assertion_provenance': 'deterministic', 'evidence_sections': ['Overview']},
+        {'canonical_name': 'SMAP', 'raw_label': 'SMAP', 'state': 'required',
+         'assertion_provenance': 'source', 'evidence_sections': ['Missing exact section']},
+    ]
+    write_manifest(root, manifest)
+
+
+def test_mitigation_relations_revision_references_deduped_evidence_and_stats(db, bundle):
+    root, manifest = bundle
+    add_mitigations(root, manifest)
+    result = ResearchIndexer(db).index_bundle(root)
+    assert result.mitigations_indexed == result.mitigation_links == 3
+    assert result.evidence_links == 2
+    assert result.validation_records == 0
+    with db._get_connection() as conn:
+        writeup = conn.execute('SELECT id,content_hash FROM writeups').fetchone()
+        chunks = {row['section']: row for row in conn.execute('SELECT * FROM writeup_chunks')}
+        relations = {row['canonical_name']: row for row in conn.execute('''SELECT m.canonical_name,vm.*
+            FROM vulnerability_mitigations vm JOIN mitigations m ON m.id=vm.mitigation_id''')}
+        suffix = f'@{writeup["id"]}.{writeup["content_hash"]}'
+        assert relations['KASLR']['source_reference'] == f'chunk:{chunks["Overview"]["id"]}' + suffix
+        assert relations['SMEP']['source_reference'] == relations['KASLR']['source_reference']
+        assert relations['SMAP']['source_reference'] == f'document:{writeup["id"]}' + suffix
+        assert relations['KASLR']['state'] == 'bypassed'
+        assert relations['SMAP']['state'] == 'required'
+        evidence = conn.execute('''SELECT e.*,c.content FROM evidence_links e
+            JOIN writeup_chunks c ON c.id=e.chunk_id ORDER BY e.id''').fetchall()
+        assert len(evidence) == 2
+        for row in evidence:
+            assert row['vulnerability_id'] == relations['KASLR']['vulnerability_id']
+            assert row['evidence_role'] == 'mitigation'
+            assert row['assertion_provenance'] == 'deterministic'
+            assert row['validation_status'] == 'source_documented'
+            assert row['observed_outcome'] == 'bypassed'
+            assert row['source_anchor_hash'] == hashlib.sha256(row['content'].encode()).hexdigest()
+        assert conn.execute('SELECT count(*) FROM validation_records').fetchone()[0] == 0
+        assert conn.execute('PRAGMA foreign_key_check').fetchall() == []
+    for row in relations.values():
+        assert Knowledge(db).read_context(row['source_reference']).source_status == 'snapshot'
+    assert db.get_stats().research['mitigations'] == 3
+
+
+@pytest.mark.parametrize('state', ['enabled', 'disabled', 'bypassed', 'required', 'discussed', 'unknown'])
+def test_mitigation_state_is_preserved_without_runtime_inference(db, bundle, state):
+    root, manifest = bundle
+    add_mitigations(root, manifest)
+    manifest['mitigations'] = [{**manifest['mitigations'][0], 'state': state, 'assertion_provenance': 'curated'}]
+    write_manifest(root, manifest)
+    ResearchIndexer(db).index_bundle(root)
+    with db._get_connection() as conn:
+        assert conn.execute('SELECT state FROM vulnerability_mitigations').fetchone()[0] == state
+        rows = conn.execute('SELECT observed_outcome,assertion_provenance,validation_status FROM evidence_links').fetchall()
+        assert all(tuple(row) == (state, 'curated', 'source_documented') for row in rows)
+        assert conn.execute('SELECT count(*) FROM validation_records').fetchone()[0] == 0
+
+
+def test_mitigation_reindex_rebuilds_relations_without_orphans(db, bundle):
+    root, manifest = bundle
+    add_mitigations(root, manifest)
+    indexer = ResearchIndexer(db)
+    indexer.index_bundle(root)
+    with db._get_connection() as conn:
+        global_rows = [tuple(row) for row in conn.execute('SELECT * FROM mitigations ORDER BY id')]
+    indexer.index_bundle(root)
+    with db._get_connection() as conn:
+        assert [tuple(row) for row in conn.execute('SELECT * FROM mitigations ORDER BY id')] == global_rows
+        assert conn.execute('SELECT count(*) FROM vulnerability_mitigations').fetchone()[0] == 3
+        assert conn.execute('SELECT count(*) FROM evidence_links').fetchone()[0] == 2
+        assert conn.execute('PRAGMA foreign_key_check').fetchall() == []
+
+
+def test_mitigations_without_vulnerability_remain_unlinked(db, bundle):
+    root, manifest = bundle
+    add_mitigations(root, manifest)
+    indexer = ResearchIndexer(db)
+    indexer.index_bundle(root)
+    del manifest['vulnerability']
+    write_manifest(root, manifest)
+    result = indexer.index_bundle(root)
+    assert result.mitigations_indexed == 3
+    assert result.mitigation_links == result.evidence_links == 0
+    with db._get_connection() as conn:
+        assert conn.execute('SELECT count(*) FROM mitigations').fetchone()[0] == 3
+        for table in ('vulnerabilities', 'vulnerability_mitigations', 'evidence_links'):
+            assert conn.execute(f'SELECT count(*) FROM {table}').fetchone()[0] == 0
+
+
+@pytest.mark.parametrize('existing_label', [None, 'Earlier source label'])
+def test_mitigation_upsert_fills_null_label_and_preserves_conflicting_global_metadata(db, bundle, existing_label):
+    root, manifest = bundle
+    add_mitigations(root, manifest)
+    with db.transaction(), db._get_connection() as conn:
+        conn.execute('INSERT INTO mitigations (canonical_name,raw_label,description) VALUES (?,?,?)',
+                     ('KASLR', existing_label, 'Preserved description'))
+    ResearchIndexer(db).index_bundle(root)
+    with db._get_connection() as conn:
+        row = conn.execute('SELECT raw_label,description FROM mitigations WHERE canonical_name=?', ('KASLR',)).fetchone()
+        assert tuple(row) == (existing_label or 'KASLR', 'Preserved description')
+
+
+def test_mitigation_insertion_failure_rolls_back_global_rows_and_prior_revision(db, bundle, monkeypatch):
+    root, manifest = bundle
+    indexer = ResearchIndexer(db)
+    indexer.index_bundle(root)
+    before = stored_state(db)
+    add_mitigations(root, manifest)
+    original = indexer._index_mitigations
+
+    def failing(*args, **kwargs):
+        original(*args, **kwargs)
+        raise RuntimeError('Injected mitigation storage failure')
+
+    monkeypatch.setattr(indexer, '_index_mitigations', failing)
+    with pytest.raises(RuntimeError, match='Injected mitigation'):
+        indexer.index_bundle(root)
+    assert stored_state(db) == before
+
+
+def test_directory_aggregates_mitigation_counts_and_reuses_global_controls(db, tmp_path):
+    collection = tmp_path / 'collection'
+    for external_id in ('first', 'second'):
+        root, manifest = make_bundle(collection / external_id, external_id)
+        add_mitigations(root, manifest)
+    result = ResearchIndexer(db).index_directory(collection)
+    assert result.mitigations_indexed == result.mitigation_links == 6
+    assert result.evidence_links == 4
+    assert db.get_stats().research['mitigations'] == 3
+
+
+def test_original_capabilities_metadata_does_not_create_mitigations(db, bundle):
+    root, manifest = bundle
+    manifest['source_metadata'] = {'original_capabilities': ['KASLR', 'SMAP', 'userns', 'io_uring']}
+    write_manifest(root, manifest)
+    result = ResearchIndexer(db).index_bundle(root)
+    assert result.mitigations_indexed == result.mitigation_links == 0
+    assert db.get_stats().research['mitigations'] == 0
 
 
 def add_artifacts_and_stages(root, manifest):

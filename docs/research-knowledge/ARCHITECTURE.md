@@ -15,6 +15,24 @@ The retained product state is Git-tracked code/documentation plus `vault.db`.
 Downloaded repositories, datasets, extraction trees, and generated candidate
 files remain disposable.
 
+### Hybrid source authority
+
+Command-vault intentionally uses three authority modes:
+
+- Personal material beneath `~/writeups` remains file-authoritative and
+  path-backed. Freshness compares the current file with its indexed revision.
+- Imported framework research becomes database-authoritative and
+  snapshot-backed after candidate acceptance. Context is verified from the
+  embedded snapshot, so upstream checkouts and normalized `/tmp` bundles can be
+  removed after preservation gates pass.
+- Project architecture, migration, source-lock, security, inspection, restore,
+  and rollback documentation is Git-authoritative in
+  `docs/research-knowledge/`.
+
+These modes must not be silently substituted. A missing personal file reports
+unavailable; a research record with a missing or invalid snapshot fails closed;
+and operational documentation changes follow normal Git review.
+
 ## Normalized bundle v1
 
 A bundle is a directory containing:
@@ -71,6 +89,12 @@ to coexist without claiming they have the same sequence.
 records. Snapshot write/read and hash verification will be added with bundle
 ingestion; the Phase 1 migration only establishes its constrained storage.
 Personal writeups retain their path-backed freshness behavior.
+
+Research snapshot export is intentionally out of scope. Framework material is
+publicly reacquirable from the pinned upstream URL and revision, while the
+retained database snapshot preserves the exact sanitized context used by the
+vault. Recovery relies on the database backup, source revision/hash metadata,
+and deterministic adapter—not a second exported Markdown corpus.
 
 ## Compatibility
 

@@ -148,6 +148,38 @@ The final integrated Phase 2 suite passes 619 tests. Neither automation script
 downloads data, executes an artifact, overwrites an existing destination, or
 touches production configuration/services. No database has been promoted.
 
+### 2026-09-12 — Phase 3 mitigation relations and profiles
+
+- Added evidence-anchored mitigation annotations with explicit
+  enabled/disabled/bypassed/required/discussed/unknown states.
+- Reviewed kernel controls are detected only from exact source mentions;
+  `original_capabilities`, user namespaces, io_uring, and BPF JIT remain raw
+  source metadata rather than inferred mitigation state.
+- Real-data review caught and fixed two deterministic-classification defects:
+  an empty parent `KASLR Bypass` heading was initially omitted, and
+  `Breaking KASLR under KPTI` initially attributed bypass to KPTI. The corrected
+  result records KASLR as bypassed and KPTI as discussed.
+- Persisted per-vulnerability mitigation relations, revision-bound source
+  references, and deduplicated mitigation evidence. Global mitigation labels
+  remain stable across sources.
+- Corrected candidate
+  `/tmp/command-vault-research.j3Xal9/candidate-databases/exploitgym-kernelctf-phase3-corrected.db`
+  has SHA-256
+  `609123e8f82840b6abee010953ef0b30836b268efb64acafdf6705008cd19d16`,
+  nine normalized mitigations, 27 vulnerability-mitigation relations, and 312
+  total evidence links. Integrity is `ok` with no foreign-key violations.
+- Added read-only exact vulnerability and operational-stage profile services.
+  Profiles contain metadata, provenance, mitigation/stage summaries, and
+  revision-bound evidence references—not stored content or generated exploit
+  plans.
+- Vulnerability profiles show only stage aliases evidenced within that
+  vulnerability's documents. Stage alias queries prioritize evidence from the
+  exact matched heading before applying response limits.
+
+The hybrid authority policy is explicit in `ARCHITECTURE.md`. Research snapshot
+export is intentionally out of scope: retained DB snapshots plus pinned upstream
+URL/revision/hash and deterministic reacquisition are the preservation model.
+
 ## Acceptance notes
 
 The implementation plan remains the governing contract. Passing a subagent's

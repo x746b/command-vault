@@ -15,6 +15,7 @@ EMPTY_RESEARCH = {
     'operational_stages': 0,
     'evidence_links': 0,
     'validation_records': 0,
+    'mitigations': 0,
     'by_source': {},
     'by_domain': {},
     'validation_by_status': {},
@@ -45,6 +46,8 @@ def populated(tmp_path):
         connection.executemany('INSERT INTO vulnerabilities (id,summary) VALUES (?,?)', [
             (10, 'sensitive-content'), (11, 'sensitive-content'),
         ])
+        connection.execute('INSERT INTO mitigations (canonical_name,description) VALUES (?,?)',
+                           ('KASLR', 'sensitive-content'))
         connection.executemany('''INSERT INTO operational_stages
             (id,canonical_name,domain,stage_class,description) VALUES (?,?,?,?,?)''', [
             (20, 'Observe', 'software', 'diagnose', 'sensitive-content'),
@@ -89,6 +92,7 @@ def test_research_counts_groups_and_nonresearch_exclusion(populated):
         'operational_stages': 2,
         'evidence_links': 2,
         'validation_records': 5,
+        'mitigations': 1,
         'by_source': {'Alpha': 2, 'Zeta': 2},
         'by_domain': {'kernel': 1, 'parser': 2},
         'validation_by_status': {'failed': 1, 'reproduced_local': 2},
@@ -106,6 +110,7 @@ def test_v2_stats_query_only_counts_and_metadata(populated):
         ('document_snapshots', 'content_blob'), ('commands', 'raw_command'),
         ('scripts', 'code'), ('writeup_chunks', 'content'), ('vulnerabilities', 'summary'),
         ('operational_stages', 'description'), ('validation_records', 'notes'),
+        ('mitigations', 'description'),
     }
     denied = []
 

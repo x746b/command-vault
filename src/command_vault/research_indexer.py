@@ -26,6 +26,8 @@ class ResearchIndexResult:
     stages_linked: int = 0
     evidence_links: int = 0
     validation_records: int = 0
+    mitigations_indexed: int = 0
+    mitigation_links: int = 0
 
 
 def _aggregate_redaction(security, source, redaction_type, detail):
@@ -68,6 +70,7 @@ class ResearchIndexer:
             for name in (
                 'bundles_seen', 'documents_indexed', 'chunks_indexed', 'vulnerabilities_indexed',
                 'scripts_indexed', 'stages_linked', 'evidence_links', 'validation_records',
+                'mitigations_indexed', 'mitigation_links',
             ):
                 totals[name] += getattr(result, name)
             redactions.update(result.redactions_by_type)
@@ -135,6 +138,7 @@ class ResearchIndexer:
                     (writeup_id,content_blob,compression,content_hash,uncompressed_bytes) VALUES (?,?,?,?,?)''',
                     (writeup_id, snapshot.content_blob, snapshot.compression,
                      snapshot.content_hash, snapshot.uncompressed_bytes))
+                vulnerability_id = None
                 if vulnerability is not None:
                     cursor = conn.execute('''INSERT INTO vulnerabilities
                         (canonical_id,external_task_id,project_name,summary,summary_provenance,
@@ -144,8 +148,9 @@ class ResearchIndexer:
                          vulnerability.summary_provenance, vulnerability.vulnerability_class,
                          vulnerability.class_provenance, vulnerability.sanitizer, vulnerability.architecture,
                          vulnerability.platform, vulnerability.subsystem, manifest.language))
+                    vulnerability_id = cursor.lastrowid
                     conn.execute('INSERT INTO writeup_vulnerabilities (writeup_id,vulnerability_id) VALUES (?,?)',
-                                 (writeup_id, cursor.lastrowid))
+                                 (writeup_id, vulnerability_id))
                 for artifact, source_hash, code, artifact_hash, normalized_hash in scripts:
                     script_id = self.db.insert_script(Script(
                         writeup_id=writeup_id, language='c', code=code, purpose=artifact.kind,
@@ -161,13 +166,52 @@ class ResearchIndexer:
                         (artifact_kind,artifact_id,validation_level,status,source_reference) VALUES (?,?,?,?,?)''',
                         ('script', script_id, artifact.validation, artifact.validation, artifact.path))
                 stages_linked, stage_evidence = self._index_stages(conn, writeup_id, manifest, stored_chunks)
+                mitigations_indexed, mitigation_links, mitigation_evidence = self._index_mitigations(
+                    conn, writeup_id, vulnerability_id, snapshot.content_hash, manifest, stored_chunks,
+                )
         counts = Counter(item['type'] for item in self.security.redaction_log)
         return ResearchIndexResult(
             bundles_seen=1, documents_indexed=1, chunks_indexed=len(chunks),
             vulnerabilities_indexed=int(vulnerability is not None), redactions_by_type=dict(sorted(counts.items())),
             scripts_indexed=len(scripts), stages_linked=stages_linked,
-            evidence_links=len(scripts) + stage_evidence, validation_records=len(scripts),
+            evidence_links=len(scripts) + stage_evidence + mitigation_evidence, validation_records=len(scripts),
+            mitigations_indexed=mitigations_indexed, mitigation_links=mitigation_links,
         )
+
+    @staticmethod
+    def _index_mitigations(conn, writeup_id, vulnerability_id, content_hash, manifest, chunks):
+        encountered, evidence = set(), set()
+        links = 0
+        for mitigation in manifest.mitigations:
+            conn.execute('''INSERT INTO mitigations (canonical_name,raw_label) VALUES (?,?)
+                ON CONFLICT(canonical_name) DO UPDATE SET raw_label=COALESCE(mitigations.raw_label,excluded.raw_label)''',
+                (mitigation.canonical_name, mitigation.raw_label))
+            mitigation_id = conn.execute('SELECT id FROM mitigations WHERE canonical_name=?',
+                                         (mitigation.canonical_name,)).fetchone()['id']
+            encountered.add(mitigation_id)
+            if vulnerability_id is None:
+                continue
+            matched = [(chunk_id, chunk) for chunk_id, chunk in chunks
+                       if chunk['section'] in mitigation.evidence_sections]
+            reference = (f'chunk:{matched[0][0]}' if matched else f'document:{writeup_id}')
+            reference += f'@{writeup_id}.{content_hash}'
+            conn.execute('''INSERT INTO vulnerability_mitigations
+                (vulnerability_id,mitigation_id,state,source_reference) VALUES (?,?,?,?)''',
+                (vulnerability_id, mitigation_id, mitigation.state, reference))
+            links += 1
+            for chunk_id, chunk in matched:
+                # Per-control identity is retained by vulnerability_mitigations;
+                # the evidence table has no mitigation_id column.
+                key = (chunk_id, mitigation.assertion_provenance, mitigation.state)
+                if key in evidence:
+                    continue
+                conn.execute('''INSERT INTO evidence_links
+                    (writeup_id,chunk_id,vulnerability_id,evidence_role,assertion_provenance,
+                     validation_status,observed_outcome,source_anchor_hash) VALUES (?,?,?,?,?,?,?,?)''',
+                    (writeup_id, chunk_id, vulnerability_id, 'mitigation', mitigation.assertion_provenance,
+                     'source_documented', mitigation.state, hashlib.sha256(chunk['content'].encode('utf-8')).hexdigest()))
+                evidence.add(key)
+        return len(encountered), links, len(evidence)
 
     @staticmethod
     def _index_stages(conn, writeup_id, manifest, chunks):
