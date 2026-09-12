@@ -12,3 +12,7 @@ curated derived fields.
 The `exploitgym/` tree mirrors the relevant kernelCTF metadata/document layout
 with a fictional CVE and nonfunctional C fixture. It is used for adapter and
 candidate-ingestion tests without distributing an upstream exploit.
+
+The `cybergym/` tree contains one fictional sanitizer report and patch in the
+selective-text dataset layout. It contains no repository archive or executable
+artifact.

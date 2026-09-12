@@ -1,0 +1,8 @@
+diff --git a/src/parser.c b/src/parser.c
+index 1111111..2222222 100644
+--- a/src/parser.c
++++ b/src/parser.c
+@@ -40,3 +40,4 @@ int parse_record(struct record *result) {
++    memset(result, 0, sizeof(*result));
+     return parse_fields(result);
+ }

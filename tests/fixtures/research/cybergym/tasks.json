@@ -1,0 +1,22 @@
+[
+  {
+    "task_id": "arvo:9000001",
+    "project_name": "fixture-parser",
+    "project_homepage": "https://example.org/fixture-parser",
+    "project_main_repo": "https://example.org/fixture-parser.git",
+    "project_language": "c++",
+    "vulnerability_description": "A fixture output structure can remain uninitialized before it is consumed.",
+    "task_difficulty": {
+      "level0": ["data/arvo/9000001/repo-vul.tar.gz"],
+      "level1": ["data/arvo/9000001/repo-vul.tar.gz", "data/arvo/9000001/description.txt"],
+      "level2": ["data/arvo/9000001/repo-vul.tar.gz", "data/arvo/9000001/description.txt", "data/arvo/9000001/error.txt"],
+      "level3": [
+        "data/arvo/9000001/repo-vul.tar.gz",
+        "data/arvo/9000001/repo-fix.tar.gz",
+        "data/arvo/9000001/description.txt",
+        "data/arvo/9000001/error.txt",
+        "data/arvo/9000001/patch.diff"
+      ]
+    }
+  }
+]

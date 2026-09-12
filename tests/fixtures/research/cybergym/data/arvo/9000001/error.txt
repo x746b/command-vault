@@ -1,0 +1,8 @@
+INFO: Running one sanitized fixture input.
+==42==WARNING: MemorySanitizer: use-of-uninitialized-value
+    #0 0x1000 in parse_record /src/fixture/parser.c:42:7
+    #1 0x1100 in consume_record /src/fixture/consumer.c:18:3
+
+DEDUP_TOKEN: parse_record--consume_record
+SUMMARY: MemorySanitizer: use-of-uninitialized-value /src/fixture/parser.c:42:7 in parse_record
+Exiting

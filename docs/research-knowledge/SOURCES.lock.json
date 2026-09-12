@@ -17,6 +17,10 @@
       "revision": "bde190ded494e52bc684b66073b436c9d992c7c6",
       "license_expression": null,
       "license_scope": "dataset card declares no license; retain per-record upstream provenance",
+      "selected_text_objects": 4521,
+      "selected_text_bytes": 89741551,
+      "excluded_globs": ["data/*/*/repo-vul.tar.gz", "data/*/*/repo-fix.tar.gz"],
+      "acquisition_status": "Git-LFS pointers inventoried; verified selective acquisition in progress",
       "sanitized_fixture": "tests/fixtures/research/cybergym-task.json",
       "sanitized_fixture_sha256": "e6d112310ad58a7315db970eeb2e12cc8df76f9942acb051cb7ddc6b84455c39"
     },
