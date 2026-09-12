@@ -326,6 +326,42 @@ project routing remains the controlling policy.
 | Repository-only adapter (Astra/high, time-boxed) | Statically parse pinned repository metadata and emit one methodology plus 41 target bundles with zero artifacts | Planned adapter/export/wrapper and focused tests | AST/YAML non-execution; exact 41/16 counts; source-only provenance | interrupted after no filesystem/test checkpoint; no files produced |
 | Static target parser (Astra/medium) | Parse literal target/depot declarations without importing or executing source | `src/command_vault/adapters/exploitbench.py`, `tests/test_exploitbench_adapter.py` | frozen records; CVE-null/year/version/temporal fields; dynamic AST/control/hash/identity/duplicate refusal; source-free errors | complete; 42 focused and 1,036 full-suite tests; commit `390c119` |
 | Annotation/capability parser (Astra/medium, already active at routing change) | Parse restricted source annotations and exact capability tuple, then join target metadata | same parser/test files | bracketless/comma labels; annotated assignment; one-to-one join; independent CVE/annotation years | complete; 103 focused, 1,097 full; real smoke 41/41/16/41 |
+| Repository bundle adapter (Terra/high) | Read four pinned repository files and emit artifact-free methodology/target bundles plus aggregate wrapper | adapter/export/wrapper and focused tests | 42 bundles; 16 linked stage definitions; 41 target profiles; hashes/dates/versions/null CVE; bounds/UTF-8/path/atomic refusal; zero run fields/artifacts | complete; 106 focused and 1,100 full before integration review |
+
+Daybreak integration review corrected CVE-null year labeling and clarified
+32-bit in-cage versus arbitrary out-of-cage primitives. The hardened focused
+suite passes 114 tests; the integrated full suite passes 1,108 tests.
+
+The reviewed repository adapter produced 42 bundles with tree SHA-256
+`e5981ce57f72308fe4640373d2aefd211ec0afd9c5fabb06159004464be1b2be`:
+one methodology reference, 41 target references, 16 operational stages, 41
+vulnerability profiles (35 CVE and six Chromium-ID-only), and zero artifacts.
+No prohibited run-dataset marker was found in the normalized files.
+
+Combined candidate
+`/tmp/command-vault-research.j3Xal9/candidate-databases/research-phase5.db`
+has SHA-256
+`42996a502426991ee9e858289eddd3fc3f6c78f20dc7c9daed992b3874009576`,
+mode `0600`, and size 212,037,632 bytes. It contains 1,576 research documents,
+1,575 vulnerability profiles, 27 operational stages, 28,206 evidence links,
+and three source collections. ExploitBench contributes 42 documents, 41
+profiles, 16 source-documented stage evidence links, zero stage edges, and zero
+scripts. Integrity is `ok` with no foreign-key violations.
+
+All 1,576 managed documents match their database content hashes and embedded
+snapshots. ExploitBench context reports `managed`; all six CVE-unknown targets
+retain null canonical IDs. Exact `addrof`, `CVE-2024-1939`,
+`v8-crbug-1509576`, patch-summary, and evaluation-flag queries work. The 16
+unrelated retrieval pages are identical between Phase 4 and Phase 5, with no
+ExploitBench top-five entries. The existing 24-query excerpt rubric remains
+20/24 for both candidates. Warm local median search latency was 47.671 ms in
+Phase 4 and 47.509 ms in Phase 5; p95 was 138.003 versus 139.206 ms. The
+pre-existing p95 acceptance-target exceedance remains documented for Phase 7;
+Phase 5 added no material regression.
+
+The live database SHA-256 remains
+`9e30b166c718941207b4d774fe7293bb90ff0086e626e6b8dddd763b628b0195`.
+No production research tree, configuration, service, or database was changed.
 
 ## Acceptance notes
 
