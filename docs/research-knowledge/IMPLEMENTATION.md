@@ -85,6 +85,36 @@ delegated further or created commits.
 - Coding-track report: 72 focused tests and 398 full-suite tests passed before
   orchestrator integration review.
 
+### 2026-09-12 — Phase 2 ExploitGym kernelCTF adapter and storage slice
+
+- Pinned and made read-only an ExploitGym checkout at
+  `e4123d043774623b2274e6bbe0155a423d631f0a` beneath the recorded project root.
+- Confirmed exactly 27 kernelCTF tasks and selected 138 UTF-8 text inputs
+  totaling 989,087 bytes; compiled PoVs and Makefiles remain excluded.
+- Added a deterministic adapter with source-metadata preservation, aggregate-only
+  redaction auditing, fixed heading-to-stage annotations, bounded/symlink-safe
+  reads, artifact hashes, and atomic no-overwrite publication.
+- Real adapter run examined 186 kernel metadata records, selected 27 kernelCTF
+  records, emitted 27 valid bundles with 78 artifacts, excluded 54 files, and
+  recorded zero redactions. Bundles total approximately 1.6 MiB and contain no
+  detected temporary paths, flags, keys, or token assignments.
+- Added a minimum transactional research indexer for source collections, stable
+  research identities, defense-in-depth sanitization, chunks, embedded
+  snapshots, vulnerability records, idempotent cleanup, and rollback.
+- Candidate `/tmp/command-vault-research.j3Xal9/candidate-databases/exploitgym-kernelctf-v1.db`
+  contains 27 research documents, 542 new chunks, 27 vulnerabilities, one source
+  collection, and no temporary writeup paths. Legacy command/script/history
+  counts remain unchanged.
+- Exact research searches for `CVE-2023-3776`, `KASLR bypass`, and
+  `core_pattern privilege escalation` returned relevant research records.
+- Integrated adapter/storage suite: 554 tests passed in 3.28 seconds.
+
+Follow-on Phase 2 slices still need to persist standalone C artifacts and stage
+evidence, serve research context from embedded snapshots, and automate
+create-only candidate construction. Until snapshot reads land, research
+`read_context` correctly falls back to indexed content with source status
+`unavailable`; it never follows the synthetic research identity as a file path.
+
 ## Acceptance notes
 
 The implementation plan remains the governing contract. Passing a subagent's
