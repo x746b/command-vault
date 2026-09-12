@@ -457,6 +457,18 @@ CyberGym profiles. Enrichment updates existing identities and must not create a
 second document or vulnerability profile. All 181 ExploitGym V8 tasks and all
 additional exploit code are deferred to optional later review.
 
+For syzbot, import only vulnerability prose, sanitizer trace, and declared
+patches. For nofuzz, import only description, vulnerable runtime output, exit
+status, and patch. Exclude reproducers, PoCs, Makefiles, images, and executable
+artifacts. These are diagnostic references with harness-observed runtime stages
+and source-documented remediation stages.
+
+For the 484 overlapping CyberGym records, enrich the existing normalized
+identity rather than emitting an ExploitGym duplicate. Existing crash-derived
+sanitizer/class fields take precedence; deterministic ExploitGym metadata fills
+only null values. Mitigation image variants are `discussed` availability
+metadata, never enabled/disabled/bypassed claims.
+
 ### 8.2 CyberGym adapter
 
 Inputs:

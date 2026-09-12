@@ -363,6 +363,33 @@ The live database SHA-256 remains
 `9e30b166c718941207b4d774fe7293bb90ff0086e626e6b8dddd763b628b0195`.
 No production research tree, configuration, service, or database was changed.
 
+### 2026-09-13 — Phase 6 ExploitGym diagnostics and enrichment
+
+The pinned ExploitGym metadata contains exactly 159 syzbot records, 18 unique
+nofuzz records, 484 records that map one-to-one to existing CyberGym external
+IDs, and 181 excluded V8 records. The selected syzbot surface is 159
+descriptions, 159 sanitizer traces, and 131 declared patches (1,557,662 bytes).
+The selected nofuzz surface is 18 descriptions, vulnerable outputs, exit-status
+files, and patches (72 files; 286,627 bytes).
+
+All 159 C reproducers, 159 syz reproducers, 159 Makefiles, 18 nofuzz PoCs, V8
+records, images/environments, and additional exploit code are excluded. Task
+artifact licenses remain null; the repository Apache-2.0 declaration is not
+applied to third-party task material.
+
+Daybreak fixed the normalization/merge contract before delegation: existing
+CyberGym crash-derived class/sanitizer values win, only null values may be
+filled, raw values and source hashes remain visible, and the four experiment
+mitigation variants are `discussed` rather than asserted enabled or bypassed.
+External IDs and document identities must remain stable.
+
+#### Public model task-packet ledger
+
+| Task | Model | Objective | Owned files | Forbidden actions | Tests/status |
+|---|---|---|---|---|---|
+| syzbot/nofuzz diagnostics | `gpt-5.6-terra` | Emit 177 diagnostic-only bundles with no code | dedicated adapter/wrapper/tests | V8, repro/PoC/code, execution, network, DB/production, delegation | pending assignment |
+| CyberGym enrichment | `gpt-5.6-terra` | Rebuild 1,507 bundles, enriching exactly 484 stable identities | dedicated enricher/wrapper/tests | duplicate identities, overwrites, source-field replacement, execution/network/DB/production, delegation | pending assignment |
+
 ## Acceptance notes
 
 The implementation plan remains the governing contract. Passing a subagent's

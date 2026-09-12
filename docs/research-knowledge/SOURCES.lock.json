@@ -33,6 +33,27 @@
       "revision": "e4123d043774623b2274e6bbe0155a423d631f0a",
       "license_expression": "Apache-2.0",
       "license_scope": "repository code and documentation; task artifacts retain their upstream licenses",
+      "userspace_metadata_sha256": "0db33007969af8829e04fc8d6628fdb72fdae40d8a6cecad639f7ccd0c76ff8d",
+      "kernel_metadata_sha256": "4a4d48eb790373e2190cfcc5a0d13086bce0f3f8c29efe5e843267a29b86f557",
+      "v8_metadata_sha256": "f674fa4083c9eb2e90fe720d166b8e05ea2a968f7bbd5aaa66197cb9840923ac",
+      "phase6_selected": {
+        "syzbot_records": 159,
+        "syzbot_descriptions": 159,
+        "syzbot_traces": 159,
+        "syzbot_patches": 131,
+        "syzbot_selected_bytes": 1557662,
+        "nofuzz_records": 18,
+        "nofuzz_selected_files": 72,
+        "nofuzz_selected_bytes": 286627,
+        "cybergym_enrichment_records": 484
+      },
+      "phase6_excluded": {
+        "syzbot_repro_c": 159,
+        "syzbot_repro_syz": 159,
+        "nofuzz_poc": 18,
+        "v8_records": 181,
+        "exploit_code": true
+      },
       "sanitized_fixture": "tests/fixtures/research/exploitgym-kernelctf-task.json",
       "sanitized_fixture_sha256": "4e916bd58d4a7e2fef5fcf87398ac25f682df6dc1eaa55514d30890c5e39e76a"
     },
