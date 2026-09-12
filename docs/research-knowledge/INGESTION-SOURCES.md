@@ -10,7 +10,7 @@ Date: 2026-09-12. No live command-vault changes were made.
 | CyberGym code | `c6fe2027d39471375920b92cf1025e23a99ffda5` | Differential vulnerable/fixed server and task methodology |
 | CyberGym dataset | `bde190ded494e52bc684b66073b436c9d992c7c6` | 1,507 task metadata records plus selectively downloadable descriptions, errors, and patches |
 | ExploitBench code | `9d0173bcf8835b74a45f60450ae7f184e29e7607` | Sixteen-capability ontology, V8 task metadata, graders, audit and reproducibility rules |
-| ExploitBench V8 runs | `41811977b3ce1b80f746fc510ae45ef9d7d3a2c9` | 123 full GPT-5.5 traces across 41 V8 environments, including three ACE runs |
+| ExploitBench V8 runs | `41811977b3ce1b80f746fc510ae45ef9d7d3a2c9` | Excluded: license null and historical model-run content is outside accepted scope |
 
 ## CyberGym
 
@@ -63,31 +63,15 @@ The existing command-vault Markdown parser processed 13 documents into 179 chunk
 
 ### Official V8 run dataset
 
-The inspected revision contains 123 successful GPT-5.5 cells: 41 environments x three seeds. Capability observations include:
+The run dataset is not an ingestion source. Its card declares `license: null`,
+and historical model runs are outside command-vault's accepted product scope.
+No run rows, JavaScript, model/seed/image metadata, grade events, audit results,
+transcripts, or tool calls enter normalized bundles, the managed corpus, or the
+database. The pinned revision remains in the source lock only to make that
+exclusion auditable and prevent accidental later scope expansion.
 
-| Capability | Runs attaining it |
-|---|---:|
-| Reach patched function / line | 122 / 120 |
-| Differential / crash | 62 / 41 |
-| `addrof` / `fakeobj` | 73 / 66 |
-| Caged read / write | 67 / 65 |
-| Arbitrary read / write | 15 / 7 |
-| PC control / ACE | 4 / 3 |
-
-One inspected ACE trace contained 187 agent turns, 219 tool calls, 181 unique shell commands, 26 written JavaScript artifacts, and ten grade calls. Its verified progression was reachability, `addrof`, `fakeobj`, caged read, differential crash, caged write, arbitrary read/write, then PC control and ACE.
-
-Do not index every trace message as equivalent knowledge. Reconstruct and index:
-
-1. The setup/problem metadata.
-2. Each first capability-attainment event.
-3. The exact submitted artifact for that grade event.
-4. The small command window that produced or verified it.
-5. The final highest-capability artifact.
-6. Audit findings and reproduction status.
-
-Store intermediate drafts as referenced raw artifacts rather than searchable scripts. This prevents hundreds of speculative commands and abandoned PoCs from dominating retrieval.
-
-The code repository is MIT licensed, with some V8-derived files carrying BSD-style notices. The official run dataset card currently has `license: null`; preserve locally with exact revision/provenance and do not redistribute it until terms are clarified.
+The code repository is MIT licensed, with some V8-derived files carrying
+BSD-style notices. Phase 5 uses repository methodology and target metadata only.
 
 ## Unified command-vault adapter
 
@@ -105,7 +89,7 @@ Use three adapters feeding one normalized intermediate record format:
 
 - `ingest_exploitgym`: metadata plus Markdown, traces, PoV source and patches.
 - `ingest_cybergym`: `tasks.json`, downloaded text artifacts and patches.
-- `ingest_exploitbench`: capability definitions, V8 target metadata, grader docs/code, and capability-attainment trace slices.
+- `ingest_exploitbench`: repository capability definitions, methodology, and metadata-only V8 targets; no code artifacts or run dataset.
 
 ## Suggested implementation sequence
 
@@ -113,8 +97,12 @@ Use three adapters feeding one normalized intermediate record format:
 2. Import ExploitBench's capability definitions and grader semantics.
 3. Import the 27 high-quality ExploitGym kernelCTF tasks as the detailed pilot.
 4. Import all CyberGym metadata and selectively fetch its roughly 86 MB text corpus.
-5. Import ExploitBench target metadata and only its verified capability milestones.
-6. Expand to ExploitGym syzbot, V8 and userspace records.
+5. Import one ExploitBench methodology document and 41 metadata-only V8 targets.
+6. Expand to 159 syzbot diagnostics, 18 unique nofuzz records, and enrich 484
+   existing CyberGym profiles without duplicate documents; defer all 181
+   ExploitGym V8 tasks and exploit code.
 7. Evaluate with pentest-style questions spanning vulnerability diagnosis, exploit primitives, mitigation effects and remediation.
 
-This order gives the vault a stable ontology first, detailed technique narratives second, broad vulnerable/crash/fix evidence third, and verified exploit trajectories last.
+This order gives the vault a stable ontology first, detailed technique
+narratives second, broad vulnerable/crash/fix evidence third, and compact
+repository-sourced target context without importing historical model traces.

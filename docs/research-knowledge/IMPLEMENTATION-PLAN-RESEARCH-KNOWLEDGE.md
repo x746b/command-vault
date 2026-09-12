@@ -446,6 +446,12 @@ Extraction:
 
 First pilot: 27 kernelCTF tasks because their documentation explicitly identifies prerequisites, trigger, leak, primitive, mitigation bypass, control-flow, reliability, and privilege-escalation stages.
 
+The approved initial follow-on is limited to 159 syzbot diagnostic records, 18
+unique nofuzz records, and metadata enrichment of 484 already-imported
+CyberGym profiles. Enrichment updates existing identities and must not create a
+second document or vulnerability profile. All 181 ExploitGym V8 tasks and all
+additional exploit code are deferred to optional later review.
+
 ### 8.2 CyberGym adapter
 
 Inputs:
@@ -477,34 +483,38 @@ Preserve whether classifications are source-provided or derived. Project reposit
 
 ### 8.3 ExploitBench adapter
 
-Use two modes.
+Use the MIT-licensed code repository only. Ingest:
 
-#### Methodology and target metadata
+- one methodology document covering the 16 precise capability definitions,
+  deterministic grader/evidence semantics, isolation, reproducibility,
+  provenance, and audit-as-review-prompt concepts;
+- 41 metadata-only V8 target profiles with CVE/Chromium IDs, patch and
+  depot-tools commits, subsystem/JIT/sandbox annotations, relevant evaluation
+  flags, source-authored summaries, and stated years;
+- zero code artifacts.
 
-Ingest:
+Translate capability names into operational-stage terms while retaining the
+original names as aliases. Definitions are source-documented methodology, not
+historical attainment evidence, and independently defined capabilities do not
+create an inferred linear graph.
 
-- 41 V8 target IDs, CVEs/Chromium IDs, patch commits, subsystem/JIT/sandbox annotations, and evaluation flags;
-- the 16 precise stage definitions and their verification semantics;
-- grader, isolation, reproducibility, patch-location, and audit documentation;
-- selected test JavaScript and grader code as source artifacts.
+Completely exclude the license-null official run dataset from normalized
+bundles, the managed research corpus, and the database. Do not import its
+JavaScript, rows, run IDs, models, seeds, images, grade events, audit results,
+transcripts, or tool calls. Retain only a source-lock exclusion record so later
+review does not silently broaden the scope.
 
-Translate benchmark capabilities into operational-stage terms while retaining the original names as aliases.
+### 8.4 Temporal retention
 
-#### Verified trace milestones
+There is no hard deletion cutoff for older exploitation patterns. Preserve all
+accepted records with their explicit dates, affected versions, tool versions,
+patch revisions, and source revisions. When a source does not state whether an
+observation is current, fixed, superseded, or stale, store `temporal_status` as
+`unknown` rather than inferring it from age.
 
-For each selected run:
-
-1. Read compressed tool calls and grade calls chronologically.
-2. Reconstruct workspace file state from `write_file` calls.
-3. At every grade event, snapshot the submitted path.
-4. Calculate the newly attained stage relative to prior successful events.
-5. Retain the artifact and a bounded preceding command window.
-6. Store the grader result, audit findings, environment, seed, image digest, and source revision.
-7. Index only first-attainment artifacts and the highest-stage final artifact.
-
-Do not index every conversation message, speculative command, abandoned draft, or hidden/encrypted reasoning field. Raw traces may remain compressed source attachments for audit/context.
-
-The official run dataset currently has no declared license. Treat it as local, provenance-preserved material until terms are clarified.
+Recency may become a modest ranking tie-breaker between otherwise comparable
+results. It must never delete or hide older evidence, override validation or
+source authority, or change exact identifier/filter behavior.
 
 ## 9. Ingestion and curation pipeline
 
@@ -712,7 +722,8 @@ Initial targets, subject to baseline measurement:
 - Validate archive paths before any selective extraction; reject traversal, device files, symlinks escaping the staging root, and oversized expansion.
 - Use disposable environments for any later reproduction. Never disable host-wide defenses on a shared machine.
 - Record upstream license per artifact. Do not assume repository code licenses relicense datasets or third-party patches.
-- Do not redistribute the ExploitBench run dataset until its unset license is clarified.
+- Do not import or redistribute the ExploitBench run dataset; its license is
+  unset and historical model runs are outside the accepted product scope.
 
 ## 14. Application file map
 
@@ -853,8 +864,8 @@ Use sanitized, minimal fixtures whenever full upstream artifacts could distract 
 | Phase 2 | Define ExploitGym mappings and review extracted meaning | Adapter implementation, code-language detection, manifest serialization, unit tests |
 | Phase 3 | Define search behavior and inspect result quality | Filter plumbing, typed responses, duplicate collapsing, CLI parity, regression tests |
 | Phase 4 | Define CyberGym derivation rules | Metadata/error/diff parsers in separate modules, fixtures and performance tests |
-| Phase 5 | Define verified-milestone semantics | Zstd/JSONL reader, workspace-state reconstruction, event joining and deterministic tests |
-| Phase 6 | Resolve cross-source ontology and deduplication policy | Independent adapter expansion and mechanical normalization rules |
+| Phase 5 | Define repository-only methodology and target semantics | Static metadata parsing, normalized bundle generation and deterministic tests |
+| Phase 6 | Resolve syzbot/nofuzz and metadata-enrichment policy | Independent adapter expansion and mechanical normalization rules |
 | Phase 7 | Own security review, acceptance and promotion | Candidate audit tooling, report generation and non-production test fixes |
 
 #### Review and merge gate
@@ -930,25 +941,30 @@ Deliverables:
 
 Exit gate: exact task/project/function/sanitizer queries work; licensing/provenance is complete; source archives remain excluded.
 
-### Phase 5 — ExploitBench stages and verified milestones
+### Phase 5 — ExploitBench methodology and target metadata
 
 Deliverables:
 
 - operational-stage ontology seeded from deterministic grader semantics;
-- 41 V8 target profiles;
-- trace state reconstruction;
-- first-attainment and highest-stage artifact extraction;
-- audit/reproduction metadata.
+- one repository-sourced methodology document;
+- 41 metadata-only V8 target profiles;
+- zero imported scripts or run-dataset records.
 
-Exit gate: verified V8 primitive progressions are retrievable without raw trace noise or incorrect authority claims.
+Exit gate: V8 capability terminology and exact target metadata are retrievable
+without run-dataset content, code artifacts, or incorrect attainment claims.
 
 ### Phase 6 — Remaining ExploitGym expansion
 
 Deliverables:
 
-- syzbot, userspace, and V8 task bundles;
-- cross-source deduplication and corroborating-source links;
-- broader mitigation and sanitizer coverage.
+- 159 syzbot diagnostic records;
+- 18 unique nofuzz records;
+- metadata-only enrichment of 484 existing CyberGym profiles without duplicate
+  documents or vulnerability profiles;
+- cross-source deduplication/corroboration and broader sanitizer coverage.
+
+All 181 ExploitGym V8 tasks and all exploit code are deferred to an optional
+later review; they are not part of initial Phase 6.
 
 Exit gate: corpus growth does not swamp personal writeups; broad-query diversity and latency remain acceptable.
 
@@ -993,7 +1009,9 @@ The smallest slice that delivers real pentest/CTF value is:
 6. Add vulnerability and technique profile tools.
 7. Test against existing cases plus 20 kernel/pwn/V8 operator questions.
 
-This slice tests the architecture on high-quality, structured material before importing thousands of broader CyberGym records or hundreds of model traces.
+This slice tests the architecture on high-quality, structured material before
+the broader CyberGym and metadata-only diagnostic expansions. Historical model
+traces are outside the accepted import scope.
 
 ## 18. Definition of done
 

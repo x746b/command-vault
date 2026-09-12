@@ -277,6 +277,45 @@ retrieve CyberGym records.
 The final integrated Phase 4 suite passes 994 tests. No production tree,
 database, configuration, or service has been changed.
 
+### 2026-09-13 — Phase 5 ExploitBench repository methodology
+
+The accepted Phase 5 source is the MIT-licensed ExploitBench repository at
+`9d0173bcf8835b74a45f60450ae7f184e29e7607`. The normalized scope is one
+methodology document, sixteen source capability definitions mapped to canonical
+operational stages, and 41 metadata-only V8 target profiles. Target metadata
+includes CVE/Chromium identity, pinned patch/depot-tools revisions, relevant
+flags, source-authored subsystem/JIT/sandbox annotations, summaries, and years.
+It contains zero scripts and no historical attainment claims.
+
+The license-null V8 run dataset at
+`41811977b3ce1b80f746fc510ae45ef9d7d3a2c9` is explicitly excluded from
+normalized bundles, the managed corpus, and candidate/production databases. No
+JavaScript, dataset row, run ID, model, seed, image result, grade event, audit
+result, transcript, or tool call will be imported. Earlier run-artifact task
+packets were interrupted before producing filesystem changes when scope was
+reviewed.
+
+The temporal retention policy has no hard age cutoff. Accepted exploitation
+patterns keep explicit dates and versions, and absent status is recorded as
+`unknown`. Recency may only be a future ranking tie-breaker; it cannot delete,
+hide, or invalidate older evidence.
+
+Initial Phase 6 is also bounded: 159 syzbot diagnostic records, 18 unique nofuzz
+records, and metadata enrichment of 484 existing CyberGym profiles without
+duplicate documents/profiles. All 181 ExploitGym V8 tasks and exploit code are
+deferred to optional later review.
+
+#### Public Astra task-packet ledger
+
+Packets request `gpt-6-astra` with high reasoning and prohibit recursive
+delegation, commits, network access, source execution, production writes,
+services/config changes, Docker, and unapproved project dependencies.
+
+| Task | Objective | Owned files | Required tests/acceptance | Status |
+|---|---|---|---|---|
+| Run-artifact preparation (superseded) | Earlier proposed selected-run extraction | No files produced | Scope review | interrupted and removed; no code or data retained |
+| Repository-only methodology adapter | Statically parse pinned repository metadata and emit one methodology plus 41 target bundles with zero artifacts | ExploitBench adapter/export/wrapper and focused tests | AST/YAML non-execution; exact 41/16 counts; null CVE; dates/versions/unknown temporal status; source-only provenance; zero scripts/run fields; malformed input refusal | pending assignment |
+
 ## Acceptance notes
 
 The implementation plan remains the governing contract. Passing a subagent's

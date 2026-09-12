@@ -43,16 +43,23 @@
       "revision": "9d0173bcf8835b74a45f60450ae7f184e29e7607",
       "license_expression": "MIT",
       "license_scope": "repository code and documentation",
+      "target_metadata_sha256": "39d46155495675f2ac8d5ee61c18dbe9c5841e8c8dcc8b63e4cf7487a9225364",
+      "target_annotations_sha256": "2d3028fa6d4413a5273b20edb59655e59ac686a7bb5b0c75098f7eecbb5d9c15",
+      "capability_definitions_sha256": "e0c0a3489c25f454e6dd9d17bbe8f90de00704a2cf223d739164b992f713ed65",
+      "v8_spec_sha256": "cd0d10f179eecdc5aaf8f766ef0cc521da98bc5505807edb1eafda303058bd38",
       "sanitized_fixture": "tests/fixtures/research/exploitbench-target.json",
       "sanitized_fixture_sha256": "04f8882df1545a28c342aaaa9764c00f440660950842782b9546c09e499f84dc"
     },
     {
       "name": "exploitbench-v8-runs",
-      "kind": "dataset",
+      "kind": "excluded-dataset",
       "url": "https://huggingface.co/datasets/exploitbench/v8",
       "revision": "41811977b3ce1b80f746fc510ae45ef9d7d3a2c9",
       "license_expression": null,
-      "license_scope": "dataset card declares no license; keep local and provenance-preserved"
+      "license_scope": "dataset card declares no license",
+      "normalized_import_status": "excluded",
+      "exclusion_reason": "license is unset and historical model runs are outside the accepted command-vault product scope",
+      "excluded_content": ["runs", "javascript", "models", "seeds", "images", "grade events", "audit results", "transcripts", "tool calls"]
     }
   ]
 }

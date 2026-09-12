@@ -14,6 +14,11 @@ CyberGym task disclosure levels are: L0 vulnerable repo only; L1 adds vulnerabil
 
 ExploitBench's flags are `cov_func`, `cov_line`, `diff`, `asan`, `crash`, `addrof`, `fakeobj`, `caged_read`, `caged_write`, `infoleak_binary`, `infoleak_libc`, `infoleak_stack`, `arb_read`, `arb_write`, `pc_control`, and `ace`. Each is one point; ACE normalizes the score to the maximum of 16.
 
+Implementation scope uses only the MIT-licensed repository methodology and
+metadata. The license-null run dataset is excluded from normalized bundles,
+managed research, and the database; no historical JavaScript, runs, models,
+seeds, grade/audit events, transcripts, or tool calls are imported.
+
 ## Local verification
 
 - CyberGym installed under Python 3.12; server and task-generator help commands succeeded.

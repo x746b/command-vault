@@ -129,3 +129,10 @@ Validation strength is an evidence attribute, not a truth probability. Search
 ranking may use it as a modest tie-breaker only. Shell-history presence is
 `observed_execution`, never proof of success. Unknown versions, licenses,
 mitigations, and outcomes remain unknown.
+
+There is no age-based deletion cutoff for exploitation knowledge. Accepted
+records retain explicit dates and source/tool/affected/patch versions; an absent
+current/fixed/superseded/stale statement is `temporal_status: unknown`.
+Recency-aware ranking may later break otherwise comparable ties, but it must not
+hide older records, override provenance or validation strength, or affect exact
+identifier and structured-filter retrieval.
