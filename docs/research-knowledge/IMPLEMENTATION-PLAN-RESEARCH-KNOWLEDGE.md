@@ -15,10 +15,15 @@ Extend command-vault into a stronger, source-backed operational knowledge base f
 
 CyberGym, ExploitGym, and ExploitBench are inputs, not the product model. Their datasets and validation methods supply high-quality vulnerability and exploitation evidence. Command-vault will not become an LLM benchmark runner, model leaderboard, agent grader, or training framework.
 
-Project execution uses a fixed two-tier model hierarchy:
+Project execution uses a single root orchestrator with optional bounded coding
+delegation:
 
 - `gpt-daybreak-blue-latest` is the root orchestrator for the entire project.
-- `gpt-6-astra` is the only permitted delegated coding model, and receives only bounded software-engineering tasks.
+- The Daybreak root may directly implement cyber-adjacent or
+  security-sensitive code.
+- `gpt-5.6-terra` is the default for routine bounded coding, tests, and source
+  adapters; `gpt-5.6-luna` may handle trivial mechanical fixtures or docs;
+  `gpt-6-astra` is optional for genuinely complex pure coding.
 - Cybersecurity interpretation, ontology decisions, source trust, authorization, safety, integration, acceptance, and production actions remain with the Daybreak Blue orchestrator.
 
 The intended operator experience is:
@@ -753,9 +758,12 @@ Expected implementation areas under `/opt/command-vault-mcp`:
 
 ### 15.0 Model orchestration and coding subagent strategy
 
-The root agent for every implementation phase must use `gpt-daybreak-blue-latest`. It owns the plan, task graph, cyber-domain reasoning, delegation, review, integration, candidate acceptance, and production handoff. Use `gpt-6-astra` subagents only for bounded implementation work that can be specified as ordinary software engineering.
+The root agent for every implementation phase must use
+`gpt-daybreak-blue-latest`. It owns the plan, task graph, cyber-domain reasoning,
+implementation decisions, delegation, review, integration, candidate
+acceptance, and production handoff. It may implement any in-scope code directly.
 
-Official OpenAI documentation describes [Daybreak Blue](https://developers.openai.com/api/docs/models/gpt-daybreak-blue-latest) as `gpt-daybreak-blue-latest`, an alias for flagship general-purpose models with safeguards calibrated for defensive cybersecurity work. Current [GPT-6 Astra guidance](https://developers.openai.com/api/docs/guides/latest-model) identifies complex software engineering as a strong use case and recommends explicitly defining delegation behavior. The project uses those strengths through a single-level hierarchy rather than allowing recursive or opportunistic delegation.
+Official OpenAI documentation describes [Daybreak Blue](https://developers.openai.com/api/docs/models/gpt-daybreak-blue-latest) as an alias with safeguards for defensive cybersecurity work and the [model catalog](https://developers.openai.com/api/docs/models) positions Astra for the hardest work, Terra for balanced intelligence/cost, and Luna for cost-sensitive workloads. The user-selected project routing applies those roles through a single delegation level.
 
 #### Fixed hierarchy
 
@@ -763,9 +771,10 @@ Official OpenAI documentation describes [Daybreak Blue](https://developers.opena
 gpt-daybreak-blue-latest (root orchestrator)
   |- owns cyber-domain analysis and all project decisions
   |- defines exact coding contracts and sanitized fixtures
-  |- delegates bounded coding tasks
+  |- may implement security-sensitive and integration code directly
+  |- may delegate bounded coding tasks
   |- reviews and integrates every result
-  `- gpt-6-astra coding subagent(s)
+  `- Terra, Luna, or Astra coding subagent(s), selected by task complexity
        |- edit only assigned files
        |- implement only the fixed software contract
        |- run scoped tests
@@ -776,13 +785,17 @@ Rules:
 
 - Do not automatically substitute another root model for `gpt-daybreak-blue-latest`.
 - Do not delegate non-coding research, cyber interpretation, exploit analysis, source-policy decisions, security acceptance, or production operations.
-- Do not delegate coding work to models other than `gpt-6-astra` unless the user explicitly revises this plan.
-- Astra subagents must not spawn their own subagents. All delegation remains visible to and controlled by Daybreak Blue.
-- The Daybreak Blue orchestrator may make small integration edits itself when necessary to merge reviewed coding results, but substantial separable coding work should be assigned to Astra.
-- If either configured model is unavailable, report the unavailable role rather than silently changing the hierarchy.
+- Use Terra for routine bounded adapters/tests, Luna for trivial mechanical
+  changes, and Astra only when complex pure coding materially benefits from it.
+- After one refusal or a time-box with no output, do not chase or repeatedly
+  retry the same delegated task; narrow/reassign once or implement it at root.
+- No subagent may spawn another subagent. All delegation remains visible to and
+  controlled by Daybreak Blue.
+- If a configured model is unavailable, report it rather than silently changing
+  the requested role.
 - Record the requested model ID, observed/resolved model identifier when available, reasoning effort, task packet, timestamps, changed files, and test results in the implementation report. This is especially important because `gpt-daybreak-blue-latest` is a moving alias.
 
-#### Suitable Astra assignments
+#### Suitable delegated assignments
 
 - Implement a pre-approved SQLite migration from an exact schema specification.
 - Add Pydantic models and JSON Schema validation from an agreed manifest contract.
@@ -809,8 +822,10 @@ These tasks should describe data shapes and expected transformations without req
 - Integrate overlapping changes and resolve schema/API design conflicts.
 - Evaluate retrieval quality against pentest/CTF operator needs.
 - Build, audit, promote, or roll back the production database.
-- Decide when work is sufficiently specified and purely coding before delegating it to Astra.
-- Receive all user steering and update the task graph without requiring Astra subagents to reinterpret project intent.
+- Decide when work is sufficiently specified before delegating it and select
+  Terra, Luna, or Astra according to the current routing policy.
+- Receive all user steering and update the task graph without requiring coding
+  subagents to reinterpret project intent.
 
 #### Task-packet contract
 
@@ -842,7 +857,12 @@ edit database.py/server.py, or change the manifest contract.
 Run the adapter unit tests and report changed files and results.
 ```
 
-Use sanitized, minimal fixtures whenever full upstream artifacts could distract from the coding contract. If a task becomes dependent on cyber-domain judgment, the Astra subagent should stop at the typed boundary and return the unresolved case to the Daybreak Blue orchestrator. Do not disguise intent or ask an agent to bypass safeguards; isolate ordinary engineering from domain decisions.
+Use sanitized, minimal fixtures whenever full upstream artifacts could distract
+from the coding contract. If a delegated task becomes dependent on cyber-domain
+judgment, the subagent should stop at the typed boundary and return the
+unresolved case to the Daybreak Blue orchestrator. Do not disguise intent or
+ask an agent to bypass safeguards; isolate ordinary engineering from domain
+decisions.
 
 #### Parallel work policy
 
@@ -857,7 +877,7 @@ Use sanitized, minimal fixtures whenever full upstream artifacts could distract 
 
 #### Suggested phase allocation
 
-| Phase | `gpt-daybreak-blue-latest` orchestrator | `gpt-6-astra` coding subagents |
+| Phase | `gpt-daybreak-blue-latest` orchestrator | Optional bounded coding delegation |
 |---|---|---|
 | Phase 0 | Freeze requirements, fixtures and acceptance gates | Fixture tooling, inventory/report utilities, test harness cleanup |
 | Phase 1 | Own schema/API decisions and migration review | JSON Schema/Pydantic implementation, migration code from fixed DDL, migration tests |
@@ -880,7 +900,13 @@ No subagent result is complete merely because its local tests pass. The Daybreak
 6. Compare candidate behavior and performance with the saved baseline.
 7. Record the integrated commit/revision in the implementation report.
 
-Recommended settings are `model: gpt-daybreak-blue-latest` with high reasoning for project orchestration and cyber-domain/security review, and `model: gpt-6-astra` with medium reasoning for routine bounded coding or high reasoning for migrations, concurrency, parser security, and difficult implementation work. The Daybreak Blue orchestrator—not Astra—performs complex cross-component integration review. Testing instructions should be calibrated to the change: targeted meaningful tests first, followed by broader checks only when integration risk warrants them.
+Recommended routing is `gpt-daybreak-blue-latest` for root orchestration and all
+cyber/security-sensitive implementation; `gpt-5.6-terra` for routine bounded
+coding/tests/adapters; `gpt-5.6-luna` for trivial mechanical fixtures/docs; and
+`gpt-6-astra` only for complex pure coding. The Daybreak Blue orchestrator
+performs cross-component integration review. Testing instructions should be
+calibrated to the change: targeted meaningful tests first, followed by broader
+checks when integration risk warrants them.
 
 ### Phase 0 — Baseline and fixtures
 
@@ -1283,7 +1309,8 @@ Do not run an old application writer against a new schema. To roll back, disconn
 Proceed on this VM with the following constraints:
 
 - Begin with Phase 0 and the 27-task ExploitGym kernelCTF pilot rather than importing every source at once.
-- Develop on a feature branch with Daybreak Blue orchestration and Astra-only coding delegation.
+- Develop on a feature branch with Daybreak Blue root orchestration and the
+  current task-appropriate optional delegation policy.
 - Keep every disposable artifact beneath one recorded `/tmp` project root.
 - Install accepted normalized research under `/home/xtk/writeups/research/` and retain DB snapshots as verified fallback.
 - Commit and push all durable code and documentation before promotion.

@@ -4,7 +4,11 @@
 
 - Root orchestration and all cyber-domain, architecture, security, source-trust,
   integration, and acceptance decisions: `gpt-daybreak-blue-latest`.
-- Bounded coding tasks only: `gpt-6-astra`.
+- The Daybreak root may implement security-sensitive code directly. Routine
+  bounded coding/tests/adapters use `gpt-5.6-terra`; trivial mechanical work may
+  use `gpt-5.6-luna`; `gpt-6-astra` is optional for complex pure coding only.
+- No subagent may delegate. After one refusal or a time-box without output, the
+  task is not repeatedly chased through the same model.
 - Production database writes, configuration changes, service restarts, Docker,
   and host security-setting changes are prohibited during development.
 - Local implementation commits are allowed; pushing and database promotion are
@@ -234,7 +238,7 @@ invariant, MSAN supplies the diagnostic path, and the patch adds bounds,
 duplicate-row, and one-strip-per-row validation. Exact task/function/patch
 queries and profiles work without claiming a CVE, RCE, or exploitability.
 
-#### Public Astra task-packet ledger
+#### Public model task-packet ledger
 
 All packets used requested model `gpt-6-astra` with high reasoning, prohibited
 recursive delegation, production writes, service/config changes, artifact
@@ -305,17 +309,23 @@ records, and metadata enrichment of 484 existing CyberGym profiles without
 duplicate documents/profiles. All 181 ExploitGym V8 tasks and exploit code are
 deferred to optional later review.
 
-#### Public Astra task-packet ledger
+#### Public model task-packet ledger
 
-Packets request `gpt-6-astra` with high reasoning and prohibit recursive
-delegation, commits, network access, source execution, production writes,
-services/config changes, Docker, and unapproved project dependencies.
+All packets prohibit recursive delegation, commits, network access, source
+execution, production writes, services/config changes, Docker, and unapproved
+project dependencies. The model-routing policy changed after the initial parser
+checkpoint: Daybreak may code directly, Terra is the routine adapter/test
+default, Luna handles trivial mechanics, and Astra is reserved for complex pure
+coding. [Official OpenAI model guidance](https://developers.openai.com/api/docs/models)
+describes the corresponding general capability/cost tiers; the user-selected
+project routing remains the controlling policy.
 
 | Task | Objective | Owned files | Required tests/acceptance | Status |
 |---|---|---|---|---|
 | Run-artifact preparation (superseded) | Earlier proposed selected-run extraction | No files produced | Scope review | interrupted and removed; no code or data retained |
-| Repository-only adapter (time-boxed) | Statically parse pinned repository metadata and emit one methodology plus 41 target bundles with zero artifacts | Planned adapter/export/wrapper and focused tests | AST/YAML non-execution; exact 41/16 counts; source-only provenance | interrupted after no filesystem/test checkpoint; no files produced |
-| Static target parser | Parse literal target/depot declarations without importing or executing source | `src/command_vault/adapters/exploitbench.py`, `tests/test_exploitbench_adapter.py` | frozen records; CVE-null/year/version/temporal fields; dynamic AST/control/hash/identity/duplicate refusal; source-free errors | complete; 42 focused tests |
+| Repository-only adapter (Astra/high, time-boxed) | Statically parse pinned repository metadata and emit one methodology plus 41 target bundles with zero artifacts | Planned adapter/export/wrapper and focused tests | AST/YAML non-execution; exact 41/16 counts; source-only provenance | interrupted after no filesystem/test checkpoint; no files produced |
+| Static target parser (Astra/medium) | Parse literal target/depot declarations without importing or executing source | `src/command_vault/adapters/exploitbench.py`, `tests/test_exploitbench_adapter.py` | frozen records; CVE-null/year/version/temporal fields; dynamic AST/control/hash/identity/duplicate refusal; source-free errors | complete; 42 focused and 1,036 full-suite tests; commit `390c119` |
+| Annotation/capability parser (Astra/medium, already active at routing change) | Parse restricted source annotations and exact capability tuple, then join target metadata | same parser/test files | bracketless/comma labels; annotated assignment; one-to-one join; independent CVE/annotation years | complete; 103 focused, 1,097 full; real smoke 41/41/16/41 |
 
 ## Acceptance notes
 
