@@ -130,8 +130,23 @@ as a benchmark score.
 The enriched candidate is 27 research documents on top of the 859-document
 baseline and has SHA-256
 `717d7ae7823a67ed6425a1c3f1a38e2769bb104b3a91783effb28e04b74a375a`.
-Create-only candidate construction is the remaining automation slice; no live
-database migration or promotion has occurred.
+It was retained as the manually integrated comparison candidate; no live
+database migration or promotion occurred.
+
+Create-only automation is now implemented and tested. The offline adapter CLI
+reproduced all 27 bundles byte-for-byte in a second output directory. The
+candidate builder used SQLite's read-only backup API and exclusive `0600`
+destination reservation to produce
+`exploitgym-kernelctf-v1-built.db` from the protected baseline. Its report shows
+schema 2, `integrity_check = ok`, zero foreign-key violations, the expected 27
+documents/27 C scripts/542 chunks/238 evidence links, and candidate SHA-256
+`690908b238cd6629329267fa3c4767ff58c1faf3f907075475e035e1aa22ddb2`.
+The baseline backup hash remained
+`8ca91bb13ddad000cb273430c9cf1be388c8d1a1fa9ffdeeaeba05ba6c62bccd`.
+
+The final integrated Phase 2 suite passes 619 tests. Neither automation script
+downloads data, executes an artifact, overwrites an existing destination, or
+touches production configuration/services. No database has been promoted.
 
 ## Acceptance notes
 
