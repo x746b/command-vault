@@ -20,7 +20,8 @@ from . import __version__
 Limit = Annotated[int, Field(ge=1, le=100)]
 Budget = Annotated[int, Field(ge=500, le=20000)]
 Offset = Annotated[int, Field(ge=0)]
-SourceType = Literal['box', 'challenge', 'sherlock']
+SourceType = Literal['box', 'challenge', 'sherlock', 'research']
+IndexSourceType = Literal['box', 'challenge', 'sherlock']
 READ = ToolAnnotations(read_only_hint=True, destructive_hint=False, open_world_hint=False)
 WRITE = ToolAnnotations(read_only_hint=False, destructive_hint=True, open_world_hint=False)
 
@@ -193,7 +194,7 @@ def create_server(db: Database | None = None, writeup_dirs=None, allow_admin=Fal
     if allow_admin:
         @mcp.tool(annotations=WRITE)
         def index_writeups(directories: list[str] | None = None, force_rebuild: bool = False,
-                           writeup_type: SourceType | None = None) -> dict[str, Any]:
+                           writeup_type: IndexSourceType | None = None) -> dict[str, Any]:
             """Admin-only ingestion. A writeup rebuild preserves indexed history."""
             return call(vault.index_writeups, directories=directories, force_rebuild=force_rebuild, writeup_type=writeup_type)
 

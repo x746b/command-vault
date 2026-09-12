@@ -126,7 +126,7 @@ Environment Variables:
     search_parser.add_argument('--category', '-c', help='Filter by category')
     search_parser.add_argument('--tag', '-g', action='append', dest='tags',
                                help='Filter by tag (repeatable, e.g., -g windows -g ad)')
-    search_parser.add_argument('--type', '-T', choices=['box', 'challenge', 'sherlock'],
+    search_parser.add_argument('--type', '-T', choices=['box', 'challenge', 'sherlock', 'research'],
                                help='[Deprecated: use --tag] Filter by writeup type')
     search_parser.add_argument('--limit', '-n', type=int, default=10, help='Max results')
 
@@ -161,7 +161,7 @@ Environment Variables:
     # Prose command
     prose_parser = subparsers.add_parser('prose', help='Search writeup prose/methodology')
     prose_parser.add_argument('query', help='Search query (e.g., "NTLM relay")')
-    prose_parser.add_argument('--type', '-T', choices=['box', 'challenge', 'sherlock'],
+    prose_parser.add_argument('--type', '-T', choices=['box', 'challenge', 'sherlock', 'research'],
                                help='Filter by writeup type')
     prose_parser.add_argument('--tag', '-g', action='append', dest='tags',
                                help='Filter by tag (repeatable)')
@@ -170,7 +170,7 @@ Environment Variables:
 
     knowledge_parser = subparsers.add_parser('knowledge', help='Search explanatory evidence with MCP-equivalent controls')
     knowledge_parser.add_argument('query', help='Topic or information need to search')
-    knowledge_parser.add_argument('--type', '-T', choices=['box', 'challenge', 'sherlock'], help='Filter by source type')
+    knowledge_parser.add_argument('--type', '-T', choices=['box', 'challenge', 'sherlock', 'research'], help='Filter by source type')
     knowledge_parser.add_argument('--tag', '-g', action='append', dest='tags', help='Required tag (repeatable; all must match)')
     knowledge_parser.add_argument('--require-term', '--require', action='append', dest='required_terms',
                                   help='Term that must match even on fallback (repeatable, at most 10)')

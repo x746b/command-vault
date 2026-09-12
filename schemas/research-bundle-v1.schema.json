@@ -1,0 +1,418 @@
+{
+  "$defs": {
+    "AssertionProvenance": {
+      "enum": [
+        "source",
+        "deterministic",
+        "curated",
+        "inferred"
+      ],
+      "title": "AssertionProvenance",
+      "type": "string"
+    },
+    "EvidenceRole": {
+      "enum": [
+        "prerequisite",
+        "procedure",
+        "signal",
+        "outcome",
+        "mitigation",
+        "remediation"
+      ],
+      "title": "EvidenceRole",
+      "type": "string"
+    },
+    "ResearchArtifact": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "minLength": 1,
+          "pattern": "^(?:[^./\\\\\\u0000-\\u001f\\u007f][^/\\\\\\u0000-\\u001f\\u007f]*|\\.[^./\\\\\\u0000-\\u001f\\u007f][^/\\\\\\u0000-\\u001f\\u007f]*|\\.\\.[^/\\\\\\u0000-\\u001f\\u007f]+)(?:/(?:[^./\\\\\\u0000-\\u001f\\u007f][^/\\\\\\u0000-\\u001f\\u007f]*|\\.[^./\\\\\\u0000-\\u001f\\u007f][^/\\\\\\u0000-\\u001f\\u007f]*|\\.\\.[^/\\\\\\u0000-\\u001f\\u007f]+))*(?![\\s\\S])",
+          "title": "Path",
+          "type": "string"
+        },
+        "kind": {
+          "minLength": 1,
+          "title": "Kind",
+          "type": "string"
+        },
+        "role": {
+          "$ref": "#/$defs/EvidenceRole"
+        },
+        "validation": {
+          "$ref": "#/$defs/ValidationStatus",
+          "default": "unknown"
+        },
+        "sha256": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "minLength": 64,
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sha256"
+        },
+        "media_type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Media Type"
+        },
+        "language": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Language"
+        },
+        "license_expression": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "License Expression"
+        }
+      },
+      "required": [
+        "path",
+        "kind",
+        "role"
+      ],
+      "title": "ResearchArtifact",
+      "type": "object"
+    },
+    "ResearchSource": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "revision": {
+          "minLength": 1,
+          "title": "Revision",
+          "type": "string"
+        },
+        "upstream_url": {
+          "format": "uri",
+          "maxLength": 2083,
+          "minLength": 1,
+          "pattern": "^https?://[^/?#@]+(?:[/?#]|$)",
+          "title": "Upstream Url",
+          "type": "string"
+        },
+        "homepage": {
+          "anyOf": [
+            {
+              "format": "uri",
+              "maxLength": 2083,
+              "minLength": 1,
+              "pattern": "^https?://[^/?#@]+(?:[/?#]|$)",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Homepage"
+        },
+        "repository_url": {
+          "anyOf": [
+            {
+              "format": "uri",
+              "maxLength": 2083,
+              "minLength": 1,
+              "pattern": "^https?://[^/?#@]+(?:[/?#]|$)",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Repository Url"
+        },
+        "license_expression": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "License Expression"
+        }
+      },
+      "required": [
+        "name",
+        "revision",
+        "upstream_url"
+      ],
+      "title": "ResearchSource",
+      "type": "object"
+    },
+    "ResearchVulnerability": {
+      "additionalProperties": false,
+      "properties": {
+        "canonical_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Canonical Id"
+        },
+        "class": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Class"
+        },
+        "class_provenance": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AssertionProvenance"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "sanitizer": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sanitizer"
+        },
+        "architecture": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Architecture"
+        },
+        "platform": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Platform"
+        },
+        "subsystem": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Subsystem"
+        },
+        "summary": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Summary"
+        }
+      },
+      "title": "ResearchVulnerability",
+      "type": "object"
+    },
+    "ValidationStatus": {
+      "enum": [
+        "unknown",
+        "not_tested",
+        "source_documented",
+        "syntax_checked",
+        "harness_observed",
+        "reproduced_local",
+        "operator_confirmed",
+        "observed_execution",
+        "failed",
+        "stale"
+      ],
+      "title": "ValidationStatus",
+      "type": "string"
+    },
+    "SourceCollectionKind": {
+      "enum": [
+        "personal-writeup",
+        "history",
+        "benchmark",
+        "research"
+      ],
+      "title": "SourceCollectionKind",
+      "type": "string"
+    },
+    "OperationalStageClass": {
+      "enum": [
+        "reach",
+        "trigger",
+        "diagnose",
+        "primitive",
+        "control",
+        "objective",
+        "remediation"
+      ],
+      "title": "OperationalStageClass",
+      "type": "string"
+    },
+    "StageRelation": {
+      "enum": [
+        "requires",
+        "enables",
+        "blocks",
+        "mitigates",
+        "subsumes"
+      ],
+      "title": "StageRelation",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "source": {
+      "$ref": "#/$defs/ResearchSource"
+    },
+    "external_id": {
+      "minLength": 1,
+      "title": "External Id",
+      "type": "string"
+    },
+    "domain": {
+      "minLength": 1,
+      "title": "Domain",
+      "type": "string"
+    },
+    "project": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Project"
+    },
+    "language": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Language"
+    },
+    "document_kind": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Document Kind"
+    },
+    "vulnerability": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ResearchVulnerability"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "artifacts": {
+      "items": {
+        "$ref": "#/$defs/ResearchArtifact"
+      },
+      "title": "Artifacts",
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_version",
+    "source",
+    "external_id",
+    "domain"
+  ],
+  "title": "ResearchManifest",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:command-vault:research-bundle:v1"
+}

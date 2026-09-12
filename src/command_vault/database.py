@@ -18,6 +18,8 @@ from .categories import get_tool_category, get_category_description, CATEGORIES
 
 logger = logging.getLogger(__name__)
 
+CURRENT_SCHEMA_VERSION = 2
+
 
 def _tokenize_fts(query: str) -> list[str]:
     """Clean and tokenize a query string for FTS5."""
@@ -302,6 +304,241 @@ END;
 """
 
 
+RESEARCH_SCHEMA = """
+CREATE TABLE source_collections (
+    id INTEGER PRIMARY KEY,
+    name TEXT UNIQUE NOT NULL,
+    source_kind TEXT NOT NULL,
+    homepage TEXT,
+    repository_url TEXT,
+    revision TEXT,
+    license_expression TEXT,
+    fetched_at TIMESTAMP,
+    manifest_hash TEXT
+);
+
+ALTER TABLE writeups ADD COLUMN source_collection_id INTEGER REFERENCES source_collections(id);
+ALTER TABLE writeups ADD COLUMN external_id TEXT;
+ALTER TABLE writeups ADD COLUMN domain TEXT;
+ALTER TABLE writeups ADD COLUMN document_kind TEXT;
+ALTER TABLE writeups ADD COLUMN upstream_url TEXT;
+ALTER TABLE techniques ADD COLUMN description TEXT;
+ALTER TABLE techniques ADD COLUMN domain TEXT;
+ALTER TABLE commands ADD COLUMN artifact_hash TEXT;
+ALTER TABLE commands ADD COLUMN normalized_hash TEXT;
+ALTER TABLE scripts ADD COLUMN artifact_hash TEXT;
+ALTER TABLE scripts ADD COLUMN normalized_hash TEXT;
+
+CREATE TABLE document_snapshots (
+    writeup_id INTEGER PRIMARY KEY REFERENCES writeups(id),
+    content_blob BLOB NOT NULL,
+    compression TEXT NOT NULL DEFAULT 'zlib' CHECK (compression = 'zlib'),
+    content_hash TEXT NOT NULL,
+    uncompressed_bytes INTEGER CHECK (uncompressed_bytes >= 0),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE vulnerabilities (
+    id INTEGER PRIMARY KEY,
+    canonical_id TEXT,
+    external_task_id TEXT,
+    project_name TEXT,
+    summary TEXT,
+    summary_provenance TEXT,
+    vulnerability_class TEXT,
+    class_provenance TEXT,
+    sanitizer TEXT,
+    architecture TEXT,
+    platform TEXT,
+    subsystem TEXT,
+    language TEXT,
+    affected_symbols TEXT,
+    introduced_revision TEXT,
+    fixed_revision TEXT
+);
+
+CREATE TABLE writeup_vulnerabilities (
+    writeup_id INTEGER NOT NULL REFERENCES writeups(id),
+    vulnerability_id INTEGER NOT NULL REFERENCES vulnerabilities(id),
+    PRIMARY KEY (writeup_id, vulnerability_id)
+);
+
+CREATE VIRTUAL TABLE vulnerabilities_fts USING fts5(
+    canonical_id, external_task_id, project_name, summary,
+    vulnerability_class, sanitizer, subsystem, affected_symbols,
+    content='vulnerabilities', content_rowid='id'
+);
+
+CREATE TRIGGER vulnerabilities_ai AFTER INSERT ON vulnerabilities BEGIN
+    INSERT INTO vulnerabilities_fts (
+        rowid, canonical_id, external_task_id, project_name, summary,
+        vulnerability_class, sanitizer, subsystem, affected_symbols
+    ) VALUES (
+        new.id, new.canonical_id, new.external_task_id, new.project_name, new.summary,
+        new.vulnerability_class, new.sanitizer, new.subsystem, new.affected_symbols
+    );
+END;
+
+CREATE TRIGGER vulnerabilities_ad AFTER DELETE ON vulnerabilities BEGIN
+    INSERT INTO vulnerabilities_fts (
+        vulnerabilities_fts, rowid, canonical_id, external_task_id, project_name,
+        summary, vulnerability_class, sanitizer, subsystem, affected_symbols
+    ) VALUES (
+        'delete', old.id, old.canonical_id, old.external_task_id, old.project_name,
+        old.summary, old.vulnerability_class, old.sanitizer, old.subsystem, old.affected_symbols
+    );
+END;
+
+CREATE TRIGGER vulnerabilities_au AFTER UPDATE ON vulnerabilities BEGIN
+    INSERT INTO vulnerabilities_fts (
+        vulnerabilities_fts, rowid, canonical_id, external_task_id, project_name,
+        summary, vulnerability_class, sanitizer, subsystem, affected_symbols
+    ) VALUES (
+        'delete', old.id, old.canonical_id, old.external_task_id, old.project_name,
+        old.summary, old.vulnerability_class, old.sanitizer, old.subsystem, old.affected_symbols
+    );
+    INSERT INTO vulnerabilities_fts (
+        rowid, canonical_id, external_task_id, project_name, summary,
+        vulnerability_class, sanitizer, subsystem, affected_symbols
+    ) VALUES (
+        new.id, new.canonical_id, new.external_task_id, new.project_name, new.summary,
+        new.vulnerability_class, new.sanitizer, new.subsystem, new.affected_symbols
+    );
+END;
+
+CREATE TABLE technique_aliases (
+    id INTEGER PRIMARY KEY,
+    technique_id INTEGER NOT NULL REFERENCES techniques(id),
+    alias TEXT NOT NULL,
+    alias_normalized TEXT UNIQUE NOT NULL,
+    provenance TEXT NOT NULL
+);
+
+CREATE TABLE operational_stages (
+    id INTEGER PRIMARY KEY,
+    canonical_name TEXT NOT NULL,
+    domain TEXT NOT NULL,
+    stage_class TEXT NOT NULL CHECK (
+        stage_class IN ('reach', 'trigger', 'diagnose', 'primitive', 'control', 'objective', 'remediation')
+    ),
+    description TEXT,
+    UNIQUE (canonical_name, domain)
+);
+
+CREATE TABLE stage_aliases (
+    stage_id INTEGER NOT NULL REFERENCES operational_stages(id),
+    alias TEXT,
+    alias_normalized TEXT,
+    provenance TEXT,
+    UNIQUE (alias_normalized, stage_id)
+);
+
+CREATE TABLE stage_edges (
+    source_stage_id INTEGER NOT NULL REFERENCES operational_stages(id),
+    target_stage_id INTEGER NOT NULL REFERENCES operational_stages(id),
+    relation TEXT NOT NULL CHECK (relation IN ('requires', 'enables', 'blocks', 'mitigates', 'subsumes')),
+    domain TEXT NOT NULL,
+    evidence_reference TEXT,
+    PRIMARY KEY (source_stage_id, target_stage_id, relation, domain)
+);
+
+CREATE TABLE evidence_links (
+    id INTEGER PRIMARY KEY,
+    writeup_id INTEGER NOT NULL REFERENCES writeups(id),
+    command_id INTEGER REFERENCES commands(id),
+    script_id INTEGER REFERENCES scripts(id),
+    chunk_id INTEGER REFERENCES writeup_chunks(id),
+    vulnerability_id INTEGER REFERENCES vulnerabilities(id),
+    technique_id INTEGER REFERENCES techniques(id),
+    stage_id INTEGER REFERENCES operational_stages(id),
+    evidence_role TEXT CHECK (
+        evidence_role IN ('prerequisite', 'procedure', 'signal', 'outcome', 'mitigation', 'remediation')
+    ),
+    assertion_provenance TEXT CHECK (
+        assertion_provenance IN ('source', 'deterministic', 'curated', 'inferred')
+    ),
+    validation_status TEXT,
+    observed_outcome TEXT,
+    environment_json TEXT,
+    source_anchor_hash TEXT,
+    CHECK ((command_id IS NOT NULL) + (script_id IS NOT NULL) + (chunk_id IS NOT NULL) = 1)
+);
+
+CREATE TABLE mitigations (
+    id INTEGER PRIMARY KEY,
+    canonical_name TEXT UNIQUE NOT NULL,
+    raw_label TEXT,
+    description TEXT
+);
+
+CREATE TABLE vulnerability_mitigations (
+    vulnerability_id INTEGER NOT NULL REFERENCES vulnerabilities(id),
+    mitigation_id INTEGER NOT NULL REFERENCES mitigations(id),
+    state TEXT,
+    source_reference TEXT,
+    PRIMARY KEY (vulnerability_id, mitigation_id)
+);
+
+CREATE TABLE technique_mitigations (
+    technique_id INTEGER NOT NULL REFERENCES techniques(id),
+    mitigation_id INTEGER NOT NULL REFERENCES mitigations(id),
+    state TEXT,
+    source_reference TEXT,
+    PRIMARY KEY (technique_id, mitigation_id)
+);
+
+CREATE TABLE artifact_mitigation_observations (
+    id INTEGER PRIMARY KEY,
+    artifact_kind TEXT,
+    artifact_id INTEGER,
+    mitigation_id INTEGER REFERENCES mitigations(id),
+    state TEXT,
+    source_reference TEXT
+);
+
+CREATE TABLE validation_records (
+    id INTEGER PRIMARY KEY,
+    artifact_kind TEXT,
+    artifact_id INTEGER,
+    validation_level TEXT,
+    status TEXT,
+    environment_json TEXT,
+    expected_signal TEXT,
+    observed_signal TEXT,
+    validated_at TIMESTAMP,
+    validator TEXT,
+    source_reference TEXT,
+    notes TEXT
+);
+
+CREATE INDEX idx_writeups_collection ON writeups(source_collection_id);
+CREATE INDEX idx_writeups_external_id ON writeups(external_id);
+CREATE INDEX idx_writeups_domain_kind ON writeups(domain, document_kind);
+CREATE INDEX idx_commands_artifact_hash ON commands(artifact_hash);
+CREATE INDEX idx_commands_normalized_hash ON commands(normalized_hash);
+CREATE INDEX idx_scripts_artifact_hash ON scripts(artifact_hash);
+CREATE INDEX idx_scripts_normalized_hash ON scripts(normalized_hash);
+CREATE INDEX idx_vulnerabilities_canonical_id ON vulnerabilities(canonical_id);
+CREATE INDEX idx_vulnerabilities_external_task_id ON vulnerabilities(external_task_id);
+CREATE INDEX idx_writeup_vulnerabilities_vulnerability ON writeup_vulnerabilities(vulnerability_id);
+CREATE INDEX idx_technique_aliases_technique ON technique_aliases(technique_id);
+CREATE INDEX idx_stage_aliases_stage ON stage_aliases(stage_id);
+CREATE INDEX idx_stage_edges_target ON stage_edges(target_stage_id);
+CREATE INDEX idx_evidence_links_writeup ON evidence_links(writeup_id);
+CREATE INDEX idx_evidence_links_command ON evidence_links(command_id);
+CREATE INDEX idx_evidence_links_script ON evidence_links(script_id);
+CREATE INDEX idx_evidence_links_chunk ON evidence_links(chunk_id);
+CREATE INDEX idx_evidence_links_vulnerability ON evidence_links(vulnerability_id);
+CREATE INDEX idx_evidence_links_technique ON evidence_links(technique_id);
+CREATE INDEX idx_evidence_links_stage ON evidence_links(stage_id);
+CREATE INDEX idx_vulnerability_mitigations_mitigation ON vulnerability_mitigations(mitigation_id);
+CREATE INDEX idx_technique_mitigations_mitigation ON technique_mitigations(mitigation_id);
+CREATE INDEX idx_artifact_mitigations_artifact ON artifact_mitigation_observations(artifact_kind, artifact_id);
+CREATE INDEX idx_artifact_mitigations_mitigation ON artifact_mitigation_observations(mitigation_id);
+CREATE INDEX idx_validation_records_artifact ON validation_records(artifact_kind, artifact_id);
+"""
+
+
 class _BatchConnection(sqlite3.Connection):
     defer_commit = False
 
@@ -320,6 +557,10 @@ class Database:
         if readonly:
             if not self.db_path.is_file():
                 raise FileNotFoundError(f"Vault database not found: {self.db_path}")
+            with self._get_connection() as conn:
+                version = conn.execute('PRAGMA user_version').fetchone()[0]
+                if version > CURRENT_SCHEMA_VERSION:
+                    raise ValueError(f"Unsupported database schema version: {version}")
         else:
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
             self._init_db()
@@ -328,7 +569,7 @@ class Database:
         """Initialize database schema."""
         with self._get_connection() as conn:
             version = conn.execute('PRAGMA user_version').fetchone()[0]
-            if version > 1:
+            if version > CURRENT_SCHEMA_VERSION:
                 raise ValueError(f"Unsupported database schema version: {version}")
             exists = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='writeups'").fetchone()
             if exists and version == 0:
@@ -348,11 +589,51 @@ class Database:
                     ALTER TABLE writeups_v1 RENAME TO writeups;
                     COMMIT;
                 ''')
-            conn.executescript(SCHEMA)
-            conn.executescript(FTS_SCHEMA)
-            conn.execute('PRAGMA user_version=1')
+            if version < 1:
+                conn.executescript(SCHEMA)
+                conn.executescript(FTS_SCHEMA)
+                conn.execute('PRAGMA user_version=1')
+                conn.commit()
+                version = 1
+            if version < CURRENT_SCHEMA_VERSION:
+                conn.execute('BEGIN IMMEDIATE')
+                try:
+                    self._migrate_v2(conn)
+                    conn.execute('PRAGMA user_version=2')
+                    conn.commit()
+                except BaseException:
+                    conn.rollback()
+                    raise
             self._seed_categories(conn)
             conn.commit()
+
+    def _migrate_v2(self, conn: sqlite3.Connection):
+        """Apply additive research DDL without executescript's implicit commit.
+
+        complete_statement keeps trigger bodies intact while each execute stays
+        inside the transaction owned by _init_db.
+        """
+        legacy_aliases = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type=? AND name=?",
+            ('table', 'technique_aliases'),
+        ).fetchone()
+        if legacy_aliases:
+            conn.execute('ALTER TABLE technique_aliases RENAME TO technique_aliases_v1')
+        statement = ''
+        for line in RESEARCH_SCHEMA.splitlines(keepends=True):
+            statement += line
+            if sqlite3.complete_statement(statement):
+                conn.execute(statement)
+                statement = ''
+        if statement.strip():
+            raise ValueError('Incomplete research migration SQL')
+        if legacy_aliases:
+            # A normalized collision must abort the migration, never discard an alias.
+            conn.execute('''
+                INSERT INTO technique_aliases (id, technique_id, alias, alias_normalized, provenance)
+                SELECT id, technique_id, alias, lower(trim(alias)), ? FROM technique_aliases_v1
+            ''', ('deterministic',))
+            conn.execute('DROP TABLE technique_aliases_v1')
 
     def _seed_categories(self, conn: sqlite3.Connection):
         """Seed categories table with predefined categories."""
@@ -443,20 +724,27 @@ class Database:
             conn.execute("DROP TABLE IF EXISTS scripts_fts")
             conn.execute("DROP TABLE IF EXISTS history_fts")
             conn.execute("DROP TABLE IF EXISTS writeup_chunks_fts")
+            conn.execute("DROP TABLE IF EXISTS vulnerabilities_fts")
 
             # Drop triggers
             for trigger in ['commands_ai', 'commands_ad', 'commands_au',
                            'scripts_ai', 'scripts_ad', 'scripts_au',
                            'history_ai', 'history_ad', 'history_au',
-                           'chunks_ai', 'chunks_ad', 'chunks_au']:
+                           'chunks_ai', 'chunks_ad', 'chunks_au',
+                           'vulnerabilities_ai', 'vulnerabilities_ad', 'vulnerabilities_au']:
                 conn.execute(f"DROP TRIGGER IF EXISTS {trigger}")
 
             # Drop main tables
-            for table in ['technique_writeups', 'techniques',
+            for table in ['validation_records', 'artifact_mitigation_observations',
+                         'vulnerability_mitigations', 'technique_mitigations', 'mitigations',
+                         'evidence_links', 'stage_edges', 'stage_aliases', 'operational_stages',
+                         'technique_aliases', 'writeup_vulnerabilities', 'vulnerabilities',
+                         'document_snapshots', 'technique_writeups', 'techniques',
                          'command_tags', 'writeup_tags', 'commands', 'scripts',
-                         'writeup_chunks', 'writeups', 'tools', 'tags',
+                         'writeup_chunks', 'writeups', 'source_collections', 'tools', 'tags',
                          'categories', 'history_commands']:
                 conn.execute(f"DROP TABLE IF EXISTS {table}")
+            conn.execute('PRAGMA user_version=0')
             conn.commit()
 
         self._init_db()

@@ -16,7 +16,9 @@
       "url": "https://huggingface.co/datasets/sunblaze-ucb/cybergym",
       "revision": "bde190ded494e52bc684b66073b436c9d992c7c6",
       "license_expression": null,
-      "license_scope": "dataset card declares no license; retain per-record upstream provenance"
+      "license_scope": "dataset card declares no license; retain per-record upstream provenance",
+      "sanitized_fixture": "tests/fixtures/research/cybergym-task.json",
+      "sanitized_fixture_sha256": "e6d112310ad58a7315db970eeb2e12cc8df76f9942acb051cb7ddc6b84455c39"
     },
     {
       "name": "exploitgym",
@@ -24,7 +26,9 @@
       "url": "https://github.com/sunblaze-ucb/exploitgym.git",
       "revision": "e4123d043774623b2274e6bbe0155a423d631f0a",
       "license_expression": "Apache-2.0",
-      "license_scope": "repository code and documentation; task artifacts retain their upstream licenses"
+      "license_scope": "repository code and documentation; task artifacts retain their upstream licenses",
+      "sanitized_fixture": "tests/fixtures/research/exploitgym-kernelctf-task.json",
+      "sanitized_fixture_sha256": "4e916bd58d4a7e2fef5fcf87398ac25f682df6dc1eaa55514d30890c5e39e76a"
     },
     {
       "name": "exploitbench",
@@ -32,7 +36,9 @@
       "url": "https://github.com/exploitbench/exploitbench.git",
       "revision": "9d0173bcf8835b74a45f60450ae7f184e29e7607",
       "license_expression": "MIT",
-      "license_scope": "repository code and documentation"
+      "license_scope": "repository code and documentation",
+      "sanitized_fixture": "tests/fixtures/research/exploitbench-target.json",
+      "sanitized_fixture_sha256": "04f8882df1545a28c342aaaa9764c00f440660950842782b9546c09e499f84dc"
     },
     {
       "name": "exploitbench-v8-runs",
