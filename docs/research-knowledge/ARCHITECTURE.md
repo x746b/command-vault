@@ -42,6 +42,13 @@ artifacts/<safe relative paths>
 Adapters must not silently transform an upstream assertion into a source fact.
 Raw labels and normalized values remain distinguishable through provenance.
 
+The common loader anchors reads to the bundle directory, refuses symlinks and
+non-regular files, bounds individual and aggregate content, validates supplied
+digests, and returns the verified artifact bytes. Consumers use those retained
+bytes instead of reopening a provenance path that may have changed after
+validation. The snapshot codec bounds decompression and verifies the recorded
+UTF-8 byte count and SHA-256 before returning context.
+
 ## SQLite schema v2
 
 Schema v2 is additive to the 0.9 schema. Existing writeups, commands, scripts,

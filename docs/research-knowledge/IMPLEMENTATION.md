@@ -70,6 +70,21 @@ Requested coding model was `gpt-6-astra` with high reasoning. The runtime did
 not expose a separate resolved model build identifier. No coding subagent
 delegated further or created commits.
 
+### 2026-09-12 — Phase 1 safe bundle vertical slice
+
+- Added a common normalized-bundle loader that reads only declared files from
+  an anchored directory descriptor.
+- Added per-file/aggregate bounds, strict UTF-8 and manifest validation,
+  duplicate-path rejection, symlink and non-regular-file rejection, and
+  supplied SHA-256 verification.
+- Loader consumers receive the verified artifact bytes; returned paths are
+  provenance/display only and are not reopened after validation.
+- Added a bounded zlib snapshot codec that rejects corrupt, truncated,
+  concatenated, trailing, oversized, wrong-size, wrong-hash, and invalid-UTF-8
+  snapshots.
+- Coding-track report: 72 focused tests and 398 full-suite tests passed before
+  orchestrator integration review.
+
 ## Acceptance notes
 
 The implementation plan remains the governing contract. Passing a subagent's
