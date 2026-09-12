@@ -60,6 +60,17 @@ class ResearchIndexer:
             raise ValueError('Managed directories must exist and have no symlink ancestors')
         return path.resolve(strict=True)
 
+    def _sanitize_document(self, document):
+        # The diagnostic label is not a credential key. Protect only that
+        # line-start label, leaving its complete value visible to every filter.
+        marker = '{CV_DIAGNOSTIC_LABEL}:'
+        while marker in document:
+            marker = '_' + marker
+        protected = re.sub(r'(?m)^([ \t]*)DEDUP_TOKEN:',
+                           lambda match: match[1] + marker, document)
+        sanitized = self.security.sanitize_text(protected, source_file='research document')
+        return sanitized.replace(marker, 'DEDUP_TOKEN:')
+
     def index_directory(self, root):
         root = Path(root)
         if root.is_symlink() or not root.is_dir():
@@ -92,7 +103,7 @@ class ResearchIndexer:
         loaded = load_research_bundle(root)
         manifest = loaded.manifest
         self.security.redaction_log = []
-        document = self.security.sanitize_text(loaded.document, source_file='research document')
+        document = self._sanitize_document(loaded.document)
         snapshot = make_document_snapshot(document)
         chunks = knowledge_chunks(document)
         vulnerability = manifest.vulnerability

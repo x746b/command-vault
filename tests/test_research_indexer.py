@@ -551,6 +551,69 @@ def test_original_capabilities_metadata_does_not_create_mitigations(db, bundle):
     assert db.get_stats().research['mitigations'] == 0
 
 
+def test_managed_dedup_diagnostic_label_preserves_document_and_snapshot_hash(db, bundle):
+    root, _ = bundle
+    document = '# Diagnostic\n\n## Evidence\n  \tDEDUP_TOKEN: diagnostic_marker_with_more_than_twenty_chars\n'
+    (root / 'document.md').write_text(document, encoding='utf-8')
+    indexer = ResearchIndexer(db, managed_root=root.parent)
+    first = indexer.index_bundle(root)
+    assert first.redactions_by_type == {}
+    with db._get_connection() as conn:
+        row = conn.execute('SELECT id,content_hash FROM writeups').fetchone()
+        snapshot = conn.execute('SELECT content_blob,compression,content_hash,uncompressed_bytes FROM document_snapshots').fetchone()
+    assert read_document_snapshot(DocumentSnapshot(**dict(snapshot))) == document
+    assert row['content_hash'] == snapshot['content_hash'] == hashlib.sha256(document.encode()).hexdigest()
+    context = Knowledge(Database(str(db.db_path), readonly=True)).read_context(f'document:{row["id"]}')
+    assert context.source_status == 'managed' and context.content == document
+    assert indexer.index_bundle(root).redactions_by_type == {}
+    assert (root / 'document.md').read_text() == document
+
+
+@pytest.mark.parametrize('value,redacted,kind', [
+    ('HTB{diagnostic_fixture_secret}', '{FLAG_REDACTED}', 'flag'),
+    ('private_key=private_fixture_key', 'private_key={PRIVATE_KEY}', 'secret'),
+    ('-----BEGIN OPENSSH PRIVATE KEY-----\nprivate_fixture_key\n-----END OPENSSH PRIVATE KEY-----',
+     '{PRIVATE_KEY_REDACTED}', 'ssh_key'),
+])
+def test_dedup_value_still_runs_through_secret_filters_and_presanitized_content_is_stable(db, bundle, value, redacted, kind):
+    root, _ = bundle
+    document = '# Diagnostic\n\n## Evidence\nDEDUP_TOKEN: ' + value + '\n'
+    expected = '# Diagnostic\n\n## Evidence\nDEDUP_TOKEN: ' + redacted + '\n'
+    (root / 'document.md').write_text(document)
+    indexer = ResearchIndexer(db, managed_root=root.parent)
+    result = indexer.index_bundle(root)
+    assert result.redactions_by_type == {kind: 1}
+    assert all(set(entry) == {'type'} for entry in indexer.security.redaction_log)
+    assert value not in repr(result) + repr(indexer.security.redaction_log)
+    with db._get_connection() as conn:
+        row = conn.execute('SELECT content_blob,compression,content_hash,uncompressed_bytes FROM document_snapshots').fetchone()
+    assert read_document_snapshot(DocumentSnapshot(**dict(row))) == expected
+    # A normalized adapter document already containing redactions must retain
+    # its exact bytes through the indexer's independent defense pass.
+    (root / 'document.md').write_text(expected)
+    second = indexer.index_bundle(root)
+    # The existing private_key pattern also counts its unchanged placeholder;
+    # preserve that filter behavior while verifying byte idempotency below.
+    assert second.redactions_by_type == ({'secret': 1} if value.startswith('private_key=') else {})
+    context = Knowledge(db).read_context('document:1')
+    assert context.source_status == 'managed' and context.content == expected
+
+
+def test_only_exact_line_start_dedup_label_is_protected_and_marker_cannot_collide(db):
+    indexer = ResearchIndexer(db)
+    value = 'fixture_value_longer_than_twenty_characters'
+    document = ('{CV_DIAGNOSTIC_LABEL}:\n_{CV_DIAGNOSTIC_LABEL}:\n'
+                f'DEDUP_TOKEN: {value}\nTOKEN: {value}\n'
+                f'prefix DEDUP_TOKEN: {value}\ndedup_token: {value}\n')
+    sanitized = indexer._sanitize_document(document)
+    assert sanitized.startswith('{CV_DIAGNOSTIC_LABEL}:\n_{CV_DIAGNOSTIC_LABEL}:\n')
+    assert f'\nDEDUP_TOKEN: {value}\n' in sanitized
+    assert '\nTOKEN: {TOKEN}\n' in sanitized
+    assert '\nprefix DEDUP_TOKEN: {TOKEN}\n' in sanitized
+    assert '\ndedup_token: {TOKEN}\n' in sanitized
+    assert indexer.security.redaction_log == [{'type': 'secret'}]
+
+
 def add_artifacts_and_stages(root, manifest):
     raw_code = b'\r\n  \r\n  /* HTB{artifact_private} */  \r\nint main(void) { return 0; }  \r\n \t\r\n'
     trace = b'Harmless fixture sanitizer trace with a documented diagnostic marker.\n'

@@ -24,6 +24,14 @@ The adapter preserves these upstream fields without reinterpretation:
 - declared difficulty-level file lists;
 - exact description, sanitizer/error output, and patch text hashes.
 
+Raw selected bytes retain SHA-256 and size. Normalized text is strict UTF-8 when
+valid; otherwise invalid bytes are rendered with deterministic backslash escapes
+and `utf8_valid=false` is recorded. The normalized runtime artifact is capped at
+4 MiB with a visible head/omitted-byte-count/tail marker, because the pinned
+corpus contains reports up to 37,140,428 bytes. The full raw object remains
+content-addressed in the acquisition manifest but is not duplicated in the
+operational database.
+
 Dataset licensing is not inferred from the CyberGym repository license. The
 bundle and artifacts retain a null license unless an upstream project/artifact
 license is explicitly established.
@@ -61,6 +69,11 @@ Unknown or ambiguous labels remain null. The adapter does not derive
 exploitability, impact, a CVE, introduced/fixed commits, or successful code
 execution from a sanitizer crash.
 
+Retained derived lists are bounded to 256 frames, 128 deduplication tokens, and
+256 affected symbols, with total counts and truncation flags. This preserves
+useful diagnostics without allowing a repetitive sanitizer report to dominate
+manifest or profile responses.
+
 ## Patch derivation
 
 Patch navigation extracts only explicit diff structure:
@@ -83,6 +96,29 @@ Each complete task emits:
 The runtime error artifact is `harness_observed`; description and patch are
 `source_documented`. These statuses describe provenance, not exploit success.
 No command or script is executed.
+
+The manifest also records deterministic evidence completeness:
+description/runtime/patch booleans, a complete-triple flag, and count `3`. The
+value is a provenance/display and future ranking tie-breaker—not a confidence or
+exploitability score. This selective import requires the full triple; incomplete
+or low-information records are not silently promoted into ordinary personal
+search results.
+
+### Operator-value example: `arvo:10841`
+
+The librawspeed record illustrates why a complete triple is useful even without
+a CVE or exploit claim:
+
+- the description identifies the violated invariant: PhaseOne strip rows were
+  assumed valid;
+- the MSAN report shows uninitialized image-row data flowing through
+  `RawImageData::checkRowIsInitialized`;
+- the patch adds `validateStrips()`, enforcing one strip per row, row bounds,
+  and duplicate-row rejection.
+
+This becomes reusable invariant-validation, sanitizer-triage, and remediation
+knowledge for parser/decoder testing. It does not establish RCE, exploitability,
+or a CVE, and the adapter must not manufacture those fields.
 
 ## Normalized document
 
