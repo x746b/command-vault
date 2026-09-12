@@ -10,5 +10,11 @@ def get_config():
     default = Path.home() / 'writeups'
     if not dirs and default.is_dir():
         dirs['unified'] = str(default)
+    research_dir = None
+    if os.environ.get('WRITEUPS_RESEARCH'):
+        research_path = Path(os.environ['WRITEUPS_RESEARCH']).expanduser().absolute()
+        if any(component.is_symlink() for component in (research_path, *research_path.parents)):
+            raise ValueError('Configured research directory must not contain symlinks')
+        research_dir = str(research_path.resolve())
     return {'db_path': str(Path(os.environ.get('VAULT_DB', str(Path.home()/'.local/share/command-vault/vault.db'))).expanduser()),
-            'writeup_dirs': dirs}
+            'writeup_dirs': dirs, 'research_dir': research_dir}

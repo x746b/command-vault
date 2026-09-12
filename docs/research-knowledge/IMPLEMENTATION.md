@@ -177,8 +177,34 @@ touches production configuration/services. No database has been promoted.
   exact matched heading before applying response limits.
 
 The hybrid authority policy is explicit in `ARCHITECTURE.md`. Research snapshot
-export is intentionally out of scope: retained DB snapshots plus pinned upstream
-URL/revision/hash and deterministic reacquisition are the preservation model.
+export is intentionally out of scope: the managed normalized corpus, retained DB
+fallback snapshots, pinned upstream URL/revision/hash, and deterministic
+reacquisition are the preservation model.
+
+Phase 3 then incorporated the durable managed-corpus requirement without writing
+the production path. `WRITEUPS_RESEARCH` is routed separately, and a canonical
+descendant exclusion prevents a parent `WRITEUPS` scan from parsing generated
+research Markdown as personal material. Managed source/external identities
+remain stable across path changes.
+
+The simulation under `/tmp/command-vault-research.j3Xal9/managed-research/`
+produced candidate `exploitgym-kernelctf-phase3-managed.db`, SHA-256
+`ebe7be6e80260ee5776f4be365d035dc5815eb6a4d7e463cb7dc61680b290dbc`.
+All 27 managed documents returned source status `managed` when hashes matched;
+removing one document caused verified `snapshot` fallback without changing the
+database. Changed, symlinked, nonregular, oversized, or unreadable managed input
+is never returned and is reported as `snapshot_changed`.
+
+Ten exact structured filters are available on knowledge search: source, domain,
+external ID, CVE, project, vulnerability class, sanitizer, operational stage,
+mitigation, and validation status. Applied filters are explicit and cursor-bound.
+CLI/MCP vulnerability and stage profiles expose only structured metadata and
+revision-bound references. The final integrated Phase 3 suite passes 836 tests.
+
+Final promotion will retain the managed corpus under
+`/home/xtk/writeups/research/{exploitgym,cybergym,exploitbench}`, the database
+fallback snapshots, and a corpus manifest/hash inventory. No files have been
+written to that production tree in this phase.
 
 ## Acceptance notes
 

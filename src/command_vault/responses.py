@@ -17,6 +17,102 @@ class Record(BaseModel):
         return getattr(self, key, default)
 
 
+class ProfileSource(Record):
+    document_id: int
+    reference: str
+    filename: str
+    source_name: str | None = None
+    domain: str | None = None
+    upstream_url: str | None = None
+    revision: str | None = None
+
+
+class ProfileEvidence(Record):
+    reference: str
+    kind: Literal['chunk', 'command', 'script']
+    evidence_role: str | None = None
+    assertion_provenance: str | None = None
+    validation_status: str | None = None
+    observed_outcome: str | None = None
+    stage: str | None = None
+    section: str | None = None
+    source: ProfileSource
+
+
+class MitigationSummary(Record):
+    canonical_name: str
+    raw_label: str | None = None
+    state: str | None = None
+    source_reference: str | None = None
+
+
+class StageSummary(Record):
+    canonical_name: str
+    domain: str
+    stage_class: str
+    description: str | None = None
+    aliases: list[str] = Field(default_factory=list)
+    evidence_count: int
+
+
+class VulnerabilityRecord(Record):
+    id: int
+    canonical_id: str | None = None
+    external_task_id: str | None = None
+    project_name: str | None = None
+    summary: str | None = None
+    summary_provenance: str | None = None
+    vulnerability_class: str | None = None
+    class_provenance: str | None = None
+    sanitizer: str | None = None
+    architecture: str | None = None
+    platform: str | None = None
+    subsystem: str | None = None
+    language: str | None = None
+    affected_symbols: str | None = None
+    introduced_revision: str | None = None
+    fixed_revision: str | None = None
+    sources: list[ProfileSource] = Field(default_factory=list)
+    operational_stages: list[StageSummary] = Field(default_factory=list)
+    mitigations: list[MitigationSummary] = Field(default_factory=list)
+    evidence: list[ProfileEvidence] = Field(default_factory=list)
+
+
+class VulnerabilityProfile(Record):
+    identifier: str
+    matches: list[VulnerabilityRecord] = Field(default_factory=list)
+    total_matches: int
+    truncated: bool
+
+
+class StageEdgeSummary(Record):
+    direction: Literal['incoming', 'outgoing']
+    relation: str
+    stage: str
+    domain: str
+    evidence_reference: str | None = None
+
+
+class OperationalStageRecord(Record):
+    id: int
+    canonical_name: str
+    domain: str
+    stage_class: str
+    description: str | None = None
+    matched_alias: str | None = None
+    aliases: list[str] = Field(default_factory=list)
+    edges: list[StageEdgeSummary] = Field(default_factory=list)
+    evidence: list[ProfileEvidence] = Field(default_factory=list)
+
+
+class OperationalStageProfile(Record):
+    identifier: str
+    domain: str | None = None
+    matches: list[OperationalStageRecord] = Field(default_factory=list)
+    total_matches: int
+    truncated: bool
+
+
 class KnowledgeSource(Record):
     document_id: int
     filename: str
@@ -108,6 +204,7 @@ class SearchPage(Record, Generic[T]):
     truncated: bool = False
     records_clipped: bool = False
     notice: str | None = None
+    applied_filters: dict[str, str] = Field(default_factory=dict)
 
 
 KnowledgePage = SearchPage[KnowledgeHit | ReferenceHit]
@@ -168,5 +265,5 @@ class ContextPage(Record):
     offset: int
     next_offset: int | None = None
     truncated: bool = False
-    source_status: Literal['current','changed','unverified','unavailable','section_unavailable','indexed','snapshot']
+    source_status: Literal['current','changed','unverified','unavailable','section_unavailable','indexed','snapshot','managed','snapshot_changed']
     evidence_only: bool = True

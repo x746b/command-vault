@@ -41,16 +41,24 @@ def _slug(value):
 
 
 class ResearchIndexer:
-    def __init__(self, db, security_filter=None):
+    def __init__(self, db, security_filter=None, managed_root=None):
         if db.readonly:
             raise ValueError('Research indexing requires a writable candidate database')
         with db._get_connection() as conn:
             if conn.execute('PRAGMA user_version').fetchone()[0] < 2:
                 raise ValueError('Research indexing requires database schema 2 or newer')
         self.db = db
+        self.managed_root = self._managed_directory(managed_root) if managed_root is not None else None
         self.security = copy(security_filter) if security_filter is not None else SecurityFilter()
         self.security.redaction_log = []
         self.security._log_redaction = MethodType(_aggregate_redaction, self.security)
+
+    @staticmethod
+    def _managed_directory(path):
+        path = Path(path).absolute()
+        if any(component.is_symlink() or not component.is_dir() for component in (path, *path.parents)):
+            raise ValueError('Managed directories must exist and have no symlink ancestors')
+        return path.resolve(strict=True)
 
     def index_directory(self, root):
         root = Path(root)
@@ -77,6 +85,10 @@ class ResearchIndexer:
         return ResearchIndexResult(**totals, redactions_by_type=dict(sorted(redactions.items())))
 
     def index_bundle(self, root):
+        if self.managed_root is not None:
+            bundle_root = self._managed_directory(root)
+            if bundle_root == self.managed_root or not bundle_root.is_relative_to(self.managed_root):
+                raise ValueError('Managed bundle must be a real descendant of the managed root')
         loaded = load_research_bundle(root)
         manifest = loaded.manifest
         self.security.redaction_log = []
@@ -105,6 +117,8 @@ class ResearchIndexer:
         title = ' — '.join(part for part in (canonical_id, summary) if part)
         title = title or manifest.project or manifest.external_id
         identity = f'research://{quote(manifest.source.name, safe="")}/{quote(manifest.external_id, safe="")}'
+        if self.managed_root is not None:
+            identity = str(loaded.root / 'document.md')
         filename = f'{_slug(manifest.source.name)}--{_slug(manifest.external_id)}.md'
         tags = {"research", manifest.source.name.lower(), manifest.domain.lower()}
         if canonical_id and re.fullmatch(r'CVE-\d{4}-\d+', canonical_id, re.IGNORECASE):
@@ -112,20 +126,28 @@ class ResearchIndexer:
         with self.db.transaction():
             with self.db._get_connection() as conn:
                 collection_id = self._source_collection(conn, manifest.source)
-                old = conn.execute('SELECT id FROM writeups WHERE filepath=?', (identity,)).fetchone()
+                existing = conn.execute('''SELECT id FROM writeups
+                    WHERE source_collection_id=? AND external_id=? AND writeup_type=?''',
+                    (collection_id, manifest.external_id, 'research')).fetchall()
+                if len(existing) > 1:
+                    raise ValueError('Duplicate research source/external identity')
+                old = existing[0] if existing else None
+                collision = conn.execute('SELECT id FROM writeups WHERE filepath=?', (identity,)).fetchone()
+                if collision is not None and (old is None or collision['id'] != old['id']):
+                    raise ValueError('Research filepath conflicts with another writeup')
                 if old:
                     self._clear_children(conn, old['id'])
                 conn.execute('''INSERT INTO writeups
-                    (filename,filepath,writeup_type,title,source_collection_id,external_id,domain,
+                    (id,filename,filepath,writeup_type,title,source_collection_id,external_id,domain,
                      document_kind,upstream_url,content_hash,parser_version)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?)
-                    ON CONFLICT(filepath) DO UPDATE SET
-                        filename=excluded.filename,writeup_type=excluded.writeup_type,title=excluded.title,
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+                    ON CONFLICT(id) DO UPDATE SET
+                        filename=excluded.filename,filepath=excluded.filepath,writeup_type=excluded.writeup_type,title=excluded.title,
                         source_collection_id=excluded.source_collection_id,external_id=excluded.external_id,
                         domain=excluded.domain,document_kind=excluded.document_kind,upstream_url=excluded.upstream_url,
                         content_hash=excluded.content_hash,parser_version=excluded.parser_version,
                         indexed_at=CURRENT_TIMESTAMP''',
-                    (filename, identity, 'research', title, collection_id, manifest.external_id,
+                    (old['id'] if old else None, filename, identity, 'research', title, collection_id, manifest.external_id,
                      manifest.domain, manifest.document_kind, str(manifest.source.upstream_url),
                      snapshot.content_hash, 'research-bundle-v1'))
                 writeup_id = conn.execute('SELECT id FROM writeups WHERE filepath=?', (identity,)).fetchone()['id']

@@ -328,6 +328,86 @@ def test_result_collection_defaults_are_independent():
     assert second.redactions_by_type == {}
 
 
+def test_managed_identity_transition_retains_id_and_personal_paths(db, bundle):
+    root, _ = bundle
+    ResearchIndexer(db).index_bundle(root)
+    with db._get_connection() as conn:
+        original = conn.execute('SELECT id FROM writeups').fetchone()[0]
+        conn.execute('INSERT INTO writeups (filename,filepath,writeup_type) VALUES (?,?,?)',
+                     ('personal.md', '/unchanged/personal.md', 'box'))
+        conn.commit()
+    indexer = ResearchIndexer(db, managed_root=root.parent)
+    indexer.index_bundle(root)
+    indexer.index_bundle(root)
+    with db._get_connection() as conn:
+        row = conn.execute('SELECT id,filepath FROM writeups WHERE writeup_type=?', ('research',)).fetchone()
+        assert tuple(row) == (original, str((root / 'document.md').resolve()))
+        assert conn.execute('SELECT filepath FROM writeups WHERE writeup_type=?', ('box',)).fetchone()[0] == '/unchanged/personal.md'
+        assert conn.execute('SELECT COUNT(*) FROM document_snapshots').fetchone()[0] == 1
+    ResearchIndexer(db).index_bundle(root)
+    with db._get_connection() as conn:
+        row = conn.execute('SELECT id,filepath FROM writeups WHERE writeup_type=?', ('research',)).fetchone()
+        assert row['id'] == original and row['filepath'].startswith('research://')
+
+
+@pytest.mark.parametrize('case', ['missing-root', 'symlink-root', 'symlink-ancestor', 'outside', 'equal', 'symlink-bundle'])
+def test_invalid_managed_paths_leave_database_unchanged(db, bundle, tmp_path, case):
+    root, _ = bundle
+    managed = root.parent
+    if case == 'missing-root':
+        managed = tmp_path / 'missing-managed'
+    elif case in ('symlink-root', 'symlink-ancestor'):
+        link = tmp_path / 'linked-managed'
+        link.symlink_to(root.parent, target_is_directory=True)
+        managed = link if case == 'symlink-root' else link / root.name
+    elif case == 'outside':
+        managed = tmp_path / 'elsewhere'
+        managed.mkdir()
+    elif case == 'equal':
+        managed = root
+    else:
+        link = managed / 'linked-bundle'
+        link.symlink_to(root, target_is_directory=True)
+        root = link
+    before = stored_state(db)
+    with pytest.raises(ValueError, match='Managed'):
+        ResearchIndexer(db, managed_root=managed).index_bundle(root)
+    assert stored_state(db) == before
+
+
+@pytest.mark.parametrize('case', ['collision', 'duplicate'])
+def test_managed_collision_or_duplicate_stable_identity_rolls_back(db, bundle, case):
+    root, manifest = bundle
+    ResearchIndexer(db).index_bundle(root)
+    with db._get_connection() as conn:
+        if case == 'collision':
+            conn.execute('INSERT INTO writeups (filename,filepath,writeup_type) VALUES (?,?,?)',
+                         ('personal.md', str((root / 'document.md').resolve()), 'box'))
+        else:
+            collection_id = conn.execute('SELECT source_collection_id FROM writeups').fetchone()[0]
+            conn.execute('''INSERT INTO writeups (filename,filepath,writeup_type,source_collection_id,external_id)
+                VALUES (?,?,?,?,?)''', ('duplicate.md', 'research://duplicate', 'research', collection_id, manifest['external_id']))
+        conn.commit()
+    before = stored_state(db)
+    with pytest.raises(ValueError, match='conflict|Duplicate'):
+        ResearchIndexer(db, managed_root=root.parent).index_bundle(root)
+    assert stored_state(db) == before
+
+
+def test_failed_managed_transition_restores_synthetic_identity(db, bundle, monkeypatch):
+    root, _ = bundle
+    ResearchIndexer(db).index_bundle(root)
+    before = stored_state(db)
+
+    def fail(*args, **kwargs):
+        raise RuntimeError('Injected managed failure')
+
+    monkeypatch.setattr(db, 'insert_chunk', fail)
+    with pytest.raises(RuntimeError, match='managed failure'):
+        ResearchIndexer(db, managed_root=root.parent).index_bundle(root)
+    assert stored_state(db) == before
+
+
 def add_mitigations(root, manifest):
     manifest['mitigations'] = [
         {'canonical_name': 'KASLR', 'raw_label': 'KASLR', 'state': 'bypassed',

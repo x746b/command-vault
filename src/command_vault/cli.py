@@ -13,6 +13,7 @@ from .tools import VaultTools
 from .config import get_config
 from .knowledge import Knowledge
 from .record_search import search_records, search_relations
+from .profiles import ResearchProfiles
 
 
 def bounded_int(minimum, maximum=None):
@@ -34,10 +35,18 @@ def run_knowledge_command(args, db_path):
     try:
         db = Database(db_path, readonly=True)
         knowledge = Knowledge(db)
-        if args.command == 'knowledge':
+        if args.command == 'vulnerability':
+            page = ResearchProfiles(db).get_vulnerability(args.identifier, limit=args.limit)
+        elif args.command == 'stage':
+            page = ResearchProfiles(db).get_operational_stage(args.identifier, domain=args.domain, limit=args.limit)
+        elif args.command == 'knowledge':
             page = knowledge.search(query=args.query, writeup_type=args.type, tags=args.tags,
                                     required_terms=args.required_terms, limit=args.limit,
-                                    max_chars=args.max_chars, cursor=args.cursor)
+                                    max_chars=args.max_chars, cursor=args.cursor,
+                                    source_name=args.source_name, domain=args.domain, external_id=args.external_id,
+                                    cve=args.cve, project=args.project, vulnerability_class=args.vulnerability_class,
+                                    sanitizer=args.sanitizer, operational_stage=args.operational_stage,
+                                    mitigation=args.mitigation, validation_status=args.validation_status)
         elif args.command == 'context':
             page = knowledge.read_context(args.reference, offset=args.offset, max_chars=args.max_chars)
         elif args.command == 'related':
@@ -179,6 +188,13 @@ Environment Variables:
                                   help='Result budget (500..20000; default 10000)')
     knowledge_parser.add_argument('--json', action='store_true', default=argparse.SUPPRESS, help='Output the structured MCP-equivalent page')
     knowledge_parser.add_argument('--cursor', help='Continue with next_cursor from the same query and filters')
+    for flag, destination in (
+        ('--source-name', 'source_name'), ('--domain', 'domain'), ('--external-id', 'external_id'),
+        ('--cve', 'cve'), ('--project', 'project'), ('--vulnerability-class', 'vulnerability_class'),
+        ('--sanitizer', 'sanitizer'), ('--stage', 'operational_stage'), ('--mitigation', 'mitigation'),
+        ('--validation-status', 'validation_status'),
+    ):
+        knowledge_parser.add_argument(flag, dest=destination, help='Exact structured research filter')
 
     context_parser = subparsers.add_parser('context', help='Read the source section behind a search reference')
     context_parser.add_argument('reference', help='Copy the complete reference returned by knowledge')
@@ -186,6 +202,16 @@ Environment Variables:
     context_parser.add_argument('--max-chars', type=bounded_int(500, 20000), default=8000,
                                 help='Page size (500..20000; default 8000)')
     context_parser.add_argument('--json', action='store_true', default=argparse.SUPPRESS, help='Output the structured MCP-equivalent page')
+
+    vulnerability_parser = subparsers.add_parser('vulnerability', help='Read an exact vulnerability profile and evidence references')
+    stage_parser = subparsers.add_parser('stage', help='Read an exact operational-stage or alias profile')
+    for profile_parser in (vulnerability_parser, stage_parser):
+        profile_parser.add_argument('identifier', help='Exact identifier or canonical name')
+        profile_parser.add_argument('--limit', type=bounded_int(1, 100), default=25,
+                                    help='Max matches and total evidence references (1..100; default 25)')
+        profile_parser.add_argument('--json', action='store_true', default=argparse.SUPPRESS,
+                                    help='Output the structured profile')
+    stage_parser.add_argument('--domain', help='Exact case-insensitive domain')
 
     # Related command (technique linking)
     related_parser = subparsers.add_parser('related', help='Find writeups sharing a technique')
@@ -268,7 +294,7 @@ Environment Variables:
     config = get_config()
     db_path = args.db or config['db_path']
     paged_records = args.command in ('search', 'scripts', 'related') or (args.command == 'history' and args.history_command == 'search')
-    if args.command in ('knowledge', 'context') or (paged_records and
+    if args.command in ('knowledge', 'context', 'vulnerability', 'stage') or (paged_records and
             (args.page or args.cursor is not None or args.max_chars is not None)):
         run_knowledge_command(args, db_path)
         return
@@ -276,7 +302,7 @@ Environment Variables:
     db = Database(db_path, readonly=not writing)
 
     writeup_dirs = {k: v for k, v in config['writeup_dirs'].items() if v and Path(v).exists()}
-    vault = VaultTools(db, writeup_dirs)
+    vault = VaultTools(db, writeup_dirs, research_dir=config.get('research_dir'))
 
     # Execute command
     result = None

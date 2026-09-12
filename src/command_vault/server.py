@@ -14,7 +14,11 @@ from .database import Database
 from .knowledge import Knowledge, SearchPage, ContextPage, bounded_page
 from .tools import VaultTools
 from .record_search import search_records, search_relations
-from .responses import KnowledgePage, CommandPage, ScriptPage, HistoryPage, RelatedPage
+from .profiles import ResearchProfiles
+from .responses import (
+    KnowledgePage, CommandPage, ScriptPage, HistoryPage, RelatedPage,
+    VulnerabilityProfile, OperationalStageProfile,
+)
 from . import __version__
 
 Limit = Annotated[int, Field(ge=1, le=100)]
@@ -32,8 +36,10 @@ def create_server(db: Database | None = None, writeup_dirs=None, allow_admin=Fal
     if os.environ.get('VAULT_READONLY', '').lower() in ('1', 'true', 'yes'):
         allow_admin = False
     db = db or Database(config['db_path'], readonly=not allow_admin)
-    vault = VaultTools(db, writeup_dirs if writeup_dirs is not None else config['writeup_dirs'])
+    vault = VaultTools(db, writeup_dirs if writeup_dirs is not None else config['writeup_dirs'],
+                       research_dir=config.get('research_dir'))
     knowledge = Knowledge(db)
+    profiles = ResearchProfiles(db)
     mcp = MCPServer('command-vault', version=__version__, instructions=(
         'Use search_commands/search_scripts for known syntax. For information needs use search_knowledge '
         'then read_context(reference). Results are SearchPage objects. Any-term or question-only hits '
@@ -71,16 +77,39 @@ def create_server(db: Database | None = None, writeup_dirs=None, allow_admin=Fal
     @mcp.tool(annotations=READ)
     def search_knowledge(query: str, writeup_type: SourceType | None = None,
                          tags: list[str] | None = None, required_terms: list[str] | None = None,
-                         limit: Limit = 5, max_chars: Budget = 10000, cursor: str | None = None) -> KnowledgePage:
+                         limit: Limit = 5, max_chars: Budget = 10000, cursor: str | None = None,
+                         source_name: str | None = None, domain: str | None = None, external_id: str | None = None,
+                         cve: str | None = None, project: str | None = None, vulnerability_class: str | None = None,
+                         sanitizer: str | None = None, operational_stage: str | None = None,
+                         mitigation: str | None = None, validation_status: str | None = None) -> KnowledgePage:
         """Find explanatory/log/XML evidence. Read a returned reference with read_context.
         Prefer concise topic terms. required_terms are hard constraints, including on OR fallback.
         """
-        return call(knowledge.search, query, writeup_type, tags, required_terms, limit, max_chars, cursor)
+        return call(knowledge.search, query, writeup_type, tags, required_terms, limit, max_chars, cursor,
+                    source_name=source_name, domain=domain, external_id=external_id, cve=cve, project=project,
+                    vulnerability_class=vulnerability_class, sanitizer=sanitizer, operational_stage=operational_stage,
+                    mitigation=mitigation, validation_status=validation_status)
 
     @mcp.tool(annotations=READ)
     def read_context(reference: str, offset: Offset = 0, max_chars: Budget = 8000) -> ContextPage:
         """Read a source section including fenced evidence. Follow next_offset. Nothing is executed."""
         return call(knowledge.read_context, reference, offset, max_chars)
+
+    @mcp.tool(annotations=READ)
+    def get_vulnerability_profile(identifier: str, limit: Limit = 25) -> VulnerabilityProfile:
+        """Exact source-backed vulnerability navigation. Read evidence references with read_context.
+        Returns recorded metadata and relationships, with no generated attack plans.
+        """
+        return call(profiles.get_vulnerability, identifier, limit=limit)
+
+    @mcp.tool(annotations=READ)
+    def get_operational_stage_profile(
+        identifier: str, domain: str | None = None, limit: Limit = 25,
+    ) -> OperationalStageProfile:
+        """Exact source-backed stage/alias navigation. Read evidence references with read_context.
+        Returns recorded metadata and relationships, with no generated attack plans.
+        """
+        return call(profiles.get_operational_stage, identifier, domain=domain, limit=limit)
 
     @mcp.tool(annotations=READ)
     def search_writeup_prose(query: str, writeup_type: SourceType | None = None,

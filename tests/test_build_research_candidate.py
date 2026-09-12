@@ -254,3 +254,28 @@ def test_cli_failure_is_content_free_and_preserves_candidate(builder, inputs, ca
     assert str(baseline.parent) not in str(error.value)
     assert capsys.readouterr().out == ''
     assert candidate.exists()
+
+
+def test_managed_root_option_stores_source_path_without_reporting_paths(builder, inputs, capsys):
+    baseline, candidate, bundles = inputs
+    before = baseline.read_bytes()
+    report = builder.main(['--baseline', str(baseline), '--candidate', str(candidate),
+                           '--bundles', str(bundles), '--managed-root', str(bundles)])
+    assert baseline.read_bytes() == before
+    assert str(bundles) not in json.dumps(report)
+    assert str(bundles) not in capsys.readouterr().out
+    with sqlite3.connect(candidate) as conn:
+        writeup_id, filepath = conn.execute('SELECT id,filepath FROM writeups WHERE writeup_type=?', ('research',)).fetchone()
+        assert filepath == str((bundles / 'one/document.md').resolve())
+    assert Knowledge(Database(str(candidate), readonly=True)).read_context(f'document:{writeup_id}').source_status == 'managed'
+
+
+def test_managed_root_outside_bundles_is_rejected_before_candidate_creation(builder, inputs, tmp_path):
+    baseline, candidate, bundles = inputs
+    managed = tmp_path / 'other-managed'
+    managed.mkdir()
+    before = baseline.read_bytes()
+    with pytest.raises(ValueError, match='under the managed root'):
+        builder.build_candidate(baseline, candidate, bundles, managed_root=managed)
+    assert not candidate.exists()
+    assert baseline.read_bytes() == before

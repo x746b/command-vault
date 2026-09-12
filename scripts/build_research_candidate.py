@@ -34,10 +34,15 @@ def _integrity(connection):
     return 'ok'
 
 
-def build_candidate(baseline: Path, candidate: Path, bundles: Path) -> dict:
+def build_candidate(baseline: Path, candidate: Path, bundles: Path, managed_root: Path | None = None) -> dict:
     baseline = Path(baseline).absolute()
     candidate = Path(candidate).absolute()
     bundles = Path(bundles)
+    if managed_root is not None:
+        managed_root = ResearchIndexer._managed_directory(managed_root)
+        collection_root = ResearchIndexer._managed_directory(bundles)
+        if not collection_root.is_relative_to(managed_root):
+            raise ValueError('Bundles must be under the managed root')
     if baseline.is_symlink() or not baseline.is_file():
         raise ValueError('Baseline must be an existing nonsymlink regular file')
     if candidate.resolve() == baseline.resolve():
@@ -64,7 +69,7 @@ def build_candidate(baseline: Path, candidate: Path, bundles: Path) -> dict:
             finally:
                 os.close(descriptor)
         db = Database(str(candidate))
-        result = ResearchIndexer(db).index_directory(bundles)
+        result = ResearchIndexer(db, managed_root=managed_root).index_directory(bundles)
         with closing(sqlite3.connect(candidate.as_uri() + '?mode=ro', uri=True)) as connection:
             connection.execute('PRAGMA query_only=ON')
             integrity = _integrity(connection)
@@ -92,9 +97,10 @@ def main(argv=None):
     parser.add_argument('--baseline', type=Path, required=True)
     parser.add_argument('--candidate', type=Path, required=True)
     parser.add_argument('--bundles', type=Path, required=True)
+    parser.add_argument('--managed-root', type=Path, help='Existing managed root containing normalized bundles')
     args = parser.parse_args(argv)
     try:
-        report = build_candidate(args.baseline, args.candidate, args.bundles)
+        report = build_candidate(args.baseline, args.candidate, args.bundles, managed_root=args.managed_root)
     except (OSError, ValueError, sqlite3.Error):
         # Failures can involve untrusted filenames or parser input. Leave the
         # candidate intact and report no source content or local paths.

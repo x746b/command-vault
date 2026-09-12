@@ -21,11 +21,12 @@ logger = logging.getLogger(__name__)
 class VaultTools:
     """MCP tools for Command Vault."""
 
-    def __init__(self, db: Database, writeup_dirs: dict[str, str]):
+    def __init__(self, db: Database, writeup_dirs: dict[str, str], research_dir: Optional[str] = None):
         self.db = db
         self.writeup_dirs = writeup_dirs
+        self.research_dir = research_dir
         self.security = SecurityFilter()
-        self.indexer = Indexer(db, self.security)
+        self.indexer = Indexer(db, self.security, research_dir=research_dir)
 
     def search_commands(
         self,

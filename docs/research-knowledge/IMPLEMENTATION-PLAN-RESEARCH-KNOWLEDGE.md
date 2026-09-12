@@ -2,7 +2,7 @@
 
 Date: 2026-09-12
 Target: command-vault after the deployed 0.9 series
-Status: proposed; no application or production database changes
+Status: implementation in progress on a feature branch; candidate-only, with no production database changes
 
 ## 1. Product objective
 
@@ -122,11 +122,13 @@ as distinguishable provenance classes. Never present an inferred vulnerability c
 
 Use explicit values such as `unknown`, `not_tested`, `source_documented`, `harness_observed`, `operator_confirmed`, `failed`, and `stale`. Avoid optimistic defaults.
 
-### 5.5 Stable, self-contained source context
+### 5.5 Stable, recoverable source context
 
-Development downloads, extraction trees, worktrees, generated bundles, and candidate builds remain in `/tmp`. To support VM cleanup and restoration, promoted research records must not depend on those temporary paths. Store the sanitized normalized `document.md` source snapshot inside the database, bound to its source hash and upstream provenance. `read_context` should read the embedded snapshot for research records after verifying its hash. Existing personal writeups may retain their current path-based freshness behavior.
+Development downloads, extraction trees, worktrees, staging bundles, and candidate builds remain in `/tmp`. Accepted sanitized normalized bundles are then installed under the managed tree `/home/xtk/writeups/research/{exploitgym,cybergym,exploitbench}/`. Generated research files are adapter-owned, hash-verified outputs and are not manually edited.
 
-This makes the retained production state consist of the Git-tracked application/documentation plus the database. Full upstream repositories, benchmark downloads, extraction trees, and a separate permanent research-source directory are not required after promotion.
+Store the sanitized normalized `document.md` snapshot inside the database as a verified fallback, bound to the same content hash and upstream provenance. `read_context` should prefer a current hash-matching managed research document, report changed managed content as an integrity problem, and use the embedded snapshot when the managed file is unavailable. Existing personal writeups retain their file-authoritative path/freshness behavior.
+
+The retained production state therefore consists of the Git-tracked application/documentation, the database, and the managed normalized research tree. Full upstream repositories, benchmark downloads, extraction trees, raw traces outside normalized bundles, and `/tmp` staging are not retained.
 
 ### 5.6 Operational terminology
 
@@ -142,7 +144,8 @@ Pinned upstream sources
   -> structured enrichment and relation building
   -> candidate SQLite database
   -> integrity/retrieval/operator acceptance tests
-  -> embedded research snapshots + atomic DB promotion
+  -> managed normalized research tree + embedded fallback snapshots
+  -> atomic DB promotion
   -> existing read-only MCP service
 ```
 
@@ -163,7 +166,13 @@ research/<source>/<external-id>/
 
 `document.md` gives `read_context` a durable, section-aware source. `manifest.json` retains structured metadata and maps raw artifacts to their roles. Raw binary targets, container images, and large vulnerable/fixed repositories are referenced by digest/URL rather than copied into command-vault.
 
-### 6.2 Manifest contract
+### 6.2 Managed research routing
+
+Use `WRITEUPS_RESEARCH=/home/xtk/writeups/research` as the dedicated managed-bundle root. Source adapters install accepted bundles beneath named children such as `exploitgym/`, `cybergym/`, and `exploitbench/`; the research indexer consumes manifests from those collections.
+
+When `WRITEUPS=/home/xtk/writeups` contains the managed root, the legacy recursive Markdown scan must exclude the canonical `WRITEUPS_RESEARCH` subtree before discovering files. It must compare resolved paths, reject an exclusion outside the configured parent, and never depend on a simple string prefix. Managed research Markdown must not be parsed a second time as a box/challenge/Sherlock document. Dedicated research ingestion remains manifest-driven and hash-verified.
+
+### 6.3 Manifest contract
 
 Illustrative shape:
 
@@ -242,7 +251,7 @@ uncompressed_bytes
 created_at
 ```
 
-Use Python's standard-library zlib support to avoid an additional runtime dependency. Snapshot content is authoritative only for the indexed research revision; upstream freshness is represented by recorded revision/provenance rather than an implicit network check. Existing personal writeups continue to resolve current files and report current/changed/unavailable states. Research context should report an explicit state such as `snapshot` with its indexed revision.
+Use Python's standard-library zlib support to avoid an additional runtime dependency. The managed normalized document is the primary full-document source when its hash matches the indexed revision; the embedded snapshot is the verified fallback for that revision. Upstream freshness is represented by recorded revision/provenance rather than an implicit network check. Existing personal writeups continue to resolve current files and report current/changed/unavailable states. Research context should distinguish current managed content, fallback snapshot use, and changed managed content.
 
 ### 7.2 Vulnerability records
 
@@ -714,8 +723,8 @@ Expected implementation areas under `/opt/command-vault-mcp`:
 | `database.py` | additive schema migration, indexes, FTS, relations, validation records |
 | `models.py` | research source type, vulnerabilities, stages, manifests, validation models |
 | `responses.py` | compact provenance/stage fields and profile response types |
-| `config.py` | explicit path-backed versus snapshot-backed source policy; no implicit temporary sources |
-| `documents.py` | research-source snapshots, hashes, path/snapshot selection and safe context resolution |
+| `config.py` | `WRITEUPS_RESEARCH` managed-root routing and parent `WRITEUPS` exclusion policy |
+| `documents.py` | managed research paths, snapshot fallback, hashes and safe context resolution |
 | `parser.py` | preserve current parser; expose reusable helpers rather than embedding source-specific logic |
 | `indexer.py` | normalized bundle/manifest ingestion and atomic relation rebuilding |
 | `techniques.py` | aliases, domains and migration of the current tag map |
@@ -950,7 +959,7 @@ Deliverables:
 - full candidate audit and retrieval report;
 - multi-domain held-out evaluation;
 - security/redaction/license report;
-- self-contained database size/snapshot report and restore manifest;
+- database/snapshot and managed-research size report plus restore manifest;
 - backup, promotion, reconnect, smoke-test and rollback runbook.
 
 Exit gate: explicit user approval after reviewing candidate results. Promotion must be atomic and recoverable.
@@ -963,7 +972,8 @@ Exit gate: explicit user approval after reviewing candidate results. Promotion m
 | Noisy model traces pollute results | index only verified capability milestones; retain raw traces as attachments |
 | Incorrect inferred technique relations | provenance classes, deterministic rules, curator review |
 | IDs change after reindex | revision-bound references, stable hashes and atomic link rebuilding |
-| Temporary sources break `read_context` | embed sanitized normalized research source snapshots in the promoted database; test after removing staging paths |
+| Temporary sources break `read_context` | install accepted normalized bundles in the managed research tree and retain verified DB snapshots as fallback |
+| Parent `WRITEUPS` scan duplicates research | canonical managed-root exclusion plus dedicated `WRITEUPS_RESEARCH` bundle routing |
 | Licensing uncertainty | per-source/artifact license fields and redistribution status |
 | Stored credentials or flags leak | deterministic scanning, redaction ledger and candidate audit |
 | History mistaken for successful execution | separate `observed_execution` from success validation |
@@ -1008,9 +1018,10 @@ After implementation and acceptance, retain only:
 
 1. The reviewed command-vault application and documentation in Git.
 2. The promoted `vault.db` and its protected release bundle.
-3. Release, migration, evaluation, source, restore, and rollback documentation.
+3. The adapter-owned normalized tree under `/home/xtk/writeups/research/`.
+4. Release, migration, evaluation, source, restore, and rollback documentation.
 
-Do not retain virtual environments, cloned benchmark repositories, downloaded datasets, Docker images, extraction directories, worktrees, candidate databases, caches, test output, or temporary credentials. Recreate runtime dependencies from the lockfile after VM restoration.
+Do not retain virtual environments, cloned benchmark repositories, downloaded raw datasets, Docker images, extraction directories, worktrees, candidate databases, caches, test output, or temporary credentials. Recreate runtime dependencies from the lockfile after VM restoration. Do retain the normalized research bundles and their manifest/hash inventory.
 
 The database may contain sensitive personal shell history and lab material. Never commit it to Git. Preserve it in a permission-restricted and preferably encrypted location outside the VM snapshot/revert boundary.
 
@@ -1128,7 +1139,7 @@ All migrations, imports, and retrieval experiments operate on candidate database
 - No subagent receives authority to modify the live DB or production config.
 - Candidate construction starts from the verified baseline backup.
 - Every phase runs integrity, foreign-key, source-anchor, snapshot-hash, and retrieval checks.
-- Test `read_context` after making the original normalized bundle path unavailable; research records must still resolve from embedded database snapshots.
+- Test `read_context` against a hash-matching managed-tree fixture and after making that fixture unavailable; fallback snapshots must still resolve. Changed managed files must not silently override indexed snapshots.
 - Record candidate size growth and confirm the retained DB remains practical to back up and restore.
 
 ### 19.7 Promotion checkpoint
@@ -1142,7 +1153,7 @@ Before promotion:
 3. A consistent live-DB backup is created and verified.
 4. The candidate DB passes integrity and foreign-key checks.
 5. Candidate and baseline retrieval reports are reviewed.
-6. Candidate source snapshots work without `/tmp` sources.
+6. Candidate research context works from a managed-tree fixture and from embedded fallback snapshots without `/tmp` staging.
 7. The candidate contains no known temporary paths, secrets, dynamic flags, or unsupported license claims.
 8. A rollback command/runbook identifies the exact old code commit and DB backup.
 
@@ -1154,7 +1165,7 @@ After promotion, verify:
 - database schema/version/hash;
 - read-only MCP startup;
 - representative legacy and research queries;
-- `read_context` for personal path-backed and research snapshot-backed sources;
+- `read_context` for personal path-backed sources and managed research with snapshot fallback;
 - command/script pagination;
 - normal MCP operations do not change database bytes;
 - all configured clients use the intended interpreter and DB.
@@ -1168,6 +1179,9 @@ Bundle contents:
 ```text
 vault.db
 vault.db.sha256
+research-corpus.tar
+research-corpus.tar.sha256
+RESEARCH-CORPUS-MANIFEST.json
 DB-MANIFEST.json
 integrity-check.txt
 foreign-key-check.txt
@@ -1179,7 +1193,7 @@ RESTORE.md
 ROLLBACK.md
 ```
 
-`DB-MANIFEST.json` should include database size, SHA-256, schema/application versions, creation time, baseline DB hash, source collection revisions, document/artifact counts, validation counts, and the compatible application commit/tag.
+`DB-MANIFEST.json` should include database size, SHA-256, schema/application versions, creation time, baseline DB hash, source collection revisions, document/artifact counts, validation counts, and the compatible application commit/tag. `RESEARCH-CORPUS-MANIFEST.json` must enumerate every managed file with relative path, size, SHA-256, source/revision, and matching database collection/document hash.
 
 Protection requirements:
 
@@ -1226,11 +1240,12 @@ After reverting the VM to the validated checkpoint:
 4. Restore `vault.db` from the protected release bundle to `/home/xtk/.local/share/command-vault/vault.db`.
 5. Set the recorded owner/group and mode `0600`.
 6. Restore or manually apply the documented minimal MCP configuration; do not blindly overwrite unrelated current configuration.
-7. Confirm configured personal writeup paths exist. Research source context should work from DB snapshots without restoring benchmark downloads.
-8. Run database integrity and foreign-key checks.
-9. Run the release smoke suite and representative legacy/research retrieval checks.
-10. Verify normal MCP startup/search/context calls do not change database bytes.
-11. Reconnect clients and record the restored application commit, DB hash, and validation results.
+7. Restore the normalized research corpus to `/home/xtk/writeups/research/`, verify its manifest/hashes, and configure `WRITEUPS_RESEARCH`.
+8. Confirm configured personal writeup paths exist and the parent `WRITEUPS` scan excludes the managed research subtree.
+9. Run database integrity and foreign-key checks.
+10. Run the release smoke suite and representative legacy/research retrieval checks, including managed-file and snapshot-fallback context.
+11. Verify normal MCP startup/search/context calls do not change database bytes.
+12. Reconnect clients and record the restored application commit, DB hash, corpus-manifest hash, and validation results.
 
 Only after the restored system passes these checks should the project be considered finished.
 
@@ -1252,7 +1267,7 @@ Proceed on this VM with the following constraints:
 - Begin with Phase 0 and the 27-task ExploitGym kernelCTF pilot rather than importing every source at once.
 - Develop on a feature branch with Daybreak Blue orchestration and Astra-only coding delegation.
 - Keep every disposable artifact beneath one recorded `/tmp` project root.
-- Make research context self-contained in the database.
+- Install accepted normalized research under `/home/xtk/writeups/research/` and retain DB snapshots as verified fallback.
 - Commit and push all durable code and documentation before promotion.
 - Export and test a protected database release bundle outside the VM before cleanup/revert.
 - Revert the VM only after both Git and DB restoration have been proven.

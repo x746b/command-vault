@@ -22,18 +22,34 @@ class Indexer:
     def __init__(
         self,
         db: Database,
-        security_filter: Optional[SecurityFilter] = None
+        security_filter: Optional[SecurityFilter] = None,
+        research_dir: Optional[str] = None,
     ):
         self.db = db
         self.security = security_filter or SecurityFilter()
         self.parser = WriteupParser(self.security)
+        self.research_dir = research_dir
+
+    def _research_exclusion(self, directory, research_dir=None):
+        configured = self.research_dir if research_dir is None else research_dir
+        if configured is None:
+            return None
+        research_path = Path(configured).expanduser().absolute()
+        if any(component.is_symlink() for component in (research_path, *research_path.parents)):
+            raise ValueError('Configured research directory must not contain symlinks')
+        research_root = research_path.resolve()
+        legacy_root = Path(directory).expanduser().resolve()
+        if research_root == legacy_root:
+            raise ValueError('Research directory requires dedicated manifest-driven ingestion, not legacy Markdown indexing')
+        return research_root if research_root.is_relative_to(legacy_root) else None
 
     def index_directory(
         self,
         directory: str,
         force_rebuild: bool = False,
         skip_existing: bool = False,
-        source_dir: Optional[str] = None
+        source_dir: Optional[str] = None,
+        research_dir: Optional[str] = None,
     ) -> IndexResult:
         """
         Index all markdown files in a directory.
@@ -56,6 +72,7 @@ class Indexer:
         chunks_extracted = 0
 
         path = Path(directory).expanduser().resolve()
+        research_exclusion = self._research_exclusion(path, research_dir)
         if not path.exists():
             return IndexResult(
                 files_processed=0,
@@ -67,6 +84,9 @@ class Indexer:
 
         # Find all markdown files
         md_files = sorted(path.glob("**/*.md"))
+        if research_exclusion is not None:
+            md_files = [candidate for candidate in md_files
+                        if not candidate.resolve().is_relative_to(research_exclusion)]
         logger.info(f"Found {len(md_files)} markdown files in {directory}")
 
         for md_file in md_files:
@@ -255,7 +275,8 @@ class Indexer:
         self,
         directories: dict[str, str],
         force_rebuild: bool = False,
-        add_new_only: bool = False
+        add_new_only: bool = False,
+        research_dir: Optional[str] = None,
     ) -> IndexResult:
         """
         Index multiple directories.
@@ -273,6 +294,7 @@ class Indexer:
         for directory in directories.values():
             if not Path(directory).expanduser().is_dir():
                 raise ValueError(f'Source directory not found: {directory}')
+            self._research_exclusion(directory, research_dir)
         if force_rebuild:
             logger.info("Force rebuild requested - resetting database")
             self.db.clear_writeups()
@@ -297,7 +319,8 @@ class Indexer:
                 path,
                 force_rebuild=False,
                 skip_existing=add_new_only,
-                source_dir=name  # 'unified', 'boxes', 'challenges', 'sherlocks'
+                source_dir=name,  # 'unified', 'boxes', 'challenges', 'sherlocks'
+                research_dir=research_dir,
             )
 
             total_result.files_processed += result.files_processed

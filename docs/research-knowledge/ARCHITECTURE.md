@@ -11,9 +11,9 @@ executes an imported artifact.
 pinned source -> adapter -> normalized bundle -> candidate database -> read-only MCP
 ```
 
-The retained product state is Git-tracked code/documentation plus `vault.db`.
-Downloaded repositories, datasets, extraction trees, and generated candidate
-files remain disposable.
+The retained product state is Git-tracked code/documentation, `vault.db`, and
+the managed normalized research tree. Downloaded repositories, raw datasets,
+extraction trees, and generated candidate files remain disposable.
 
 ### Hybrid source authority
 
@@ -21,17 +21,33 @@ Command-vault intentionally uses three authority modes:
 
 - Personal material beneath `~/writeups` remains file-authoritative and
   path-backed. Freshness compares the current file with its indexed revision.
-- Imported framework research becomes database-authoritative and
-  snapshot-backed after candidate acceptance. Context is verified from the
-  embedded snapshot, so upstream checkouts and normalized `/tmp` bundles can be
-  removed after preservation gates pass.
+- Imported framework research is adapter-owned under
+  `/home/xtk/writeups/research/{exploitgym,cybergym,exploitbench}`. A
+  hash-matching managed document is the primary full-document source; the
+  embedded database snapshot is its verified fallback. Upstream checkouts and
+  `/tmp` staging can be removed after preservation gates pass.
 - Project architecture, migration, source-lock, security, inspection, restore,
   and rollback documentation is Git-authoritative in
   `docs/research-knowledge/`.
 
 These modes must not be silently substituted. A missing personal file reports
-unavailable; a research record with a missing or invalid snapshot fails closed;
-and operational documentation changes follow normal Git review.
+unavailable; changed managed research fails integrity checks; a missing managed
+research file falls back to its verified snapshot; and operational documentation
+changes follow normal Git review.
+
+### Managed routing and duplicate prevention
+
+`WRITEUPS_RESEARCH=/home/xtk/writeups/research` identifies the managed bundle
+root. Dedicated manifest-driven research ingestion walks its source children.
+If the general `WRITEUPS=/home/xtk/writeups` root contains that tree, the legacy
+Markdown scanner excludes the resolved managed subtree before recursive
+discovery. This prevents the same generated `document.md` from being indexed a
+second time and misclassified as a box/challenge/Sherlock writeup.
+
+The exclusion is path-aware: resolve both roots, require the managed root to be
+inside the general root before excluding it, and do not use a textual-prefix
+test. Generated managed files are updated only by reviewed adapters and verified
+against their manifests; operators do not hand-edit them.
 
 ## Normalized bundle v1
 
@@ -85,16 +101,14 @@ The graph is deliberately not a universal exploit ladder. `domain` allows a
 kernel primitive, web precondition, AD control edge, and DFIR diagnostic stage
 to coexist without claiming they have the same sequence.
 
-`document_snapshots` is the durable context mechanism for promoted research
-records. Snapshot write/read and hash verification will be added with bundle
-ingestion; the Phase 1 migration only establishes its constrained storage.
-Personal writeups retain their path-backed freshness behavior.
+`document_snapshots` is the verified fallback context mechanism for promoted
+research records. The managed normalized document is preferred when its hash
+matches the indexed revision. Personal writeups retain their path-backed
+freshness behavior without snapshot fallback.
 
-Research snapshot export is intentionally out of scope. Framework material is
-publicly reacquirable from the pinned upstream URL and revision, while the
-retained database snapshot preserves the exact sanitized context used by the
-vault. Recovery relies on the database backup, source revision/hash metadata,
-and deterministic adapter—not a second exported Markdown corpus.
+Research snapshot export is intentionally out of scope. Recovery retains the
+managed normalized corpus and embedded database fallback, with public upstream
+URL/revision metadata and deterministic adapters available for reacquisition.
 
 ## Compatibility
 
