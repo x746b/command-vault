@@ -1330,8 +1330,10 @@ class Database:
         """Get database statistics."""
         with self._get_connection() as conn:
             # Writeup counts
-            writeup_stats = {'total': 0, 'boxes': 0, 'challenges': 0, 'sherlocks': 0}
-            type_to_plural = {'box': 'boxes', 'challenge': 'challenges', 'sherlock': 'sherlocks'}
+            writeup_stats = {'total': 0, 'boxes': 0, 'challenges': 0, 'sherlocks': 0, 'research': 0}
+            type_to_plural = {
+                'box': 'boxes', 'challenge': 'challenges', 'sherlock': 'sherlocks', 'research': 'research',
+            }
             for row in conn.execute(
                 "SELECT writeup_type, COUNT(*) as cnt FROM writeups GROUP BY writeup_type"
             ).fetchall():
@@ -1433,8 +1435,54 @@ class Database:
                 scripts={'total': script_total, 'by_language': script_by_lang},
                 tools={'total': tool_total, 'top_10': top_tools},
                 chunks=chunk_stats,
-                history=history_stats
+                history=history_stats,
+                research=self._get_research_stats(conn, writeup_stats['research']),
             )
+
+    def _get_research_stats(self, conn: sqlite3.Connection, document_count: int) -> dict:
+        """Count research metadata without reading document or artifact content."""
+        result = {
+            'documents': 0,
+            'source_collections': 0,
+            'vulnerabilities': 0,
+            'operational_stages': 0,
+            'evidence_links': 0,
+            'validation_records': 0,
+            'by_source': {},
+            'by_domain': {},
+            'validation_by_status': {},
+        }
+        if conn.execute('PRAGMA user_version').fetchone()[0] < 2:
+            return result
+        result['documents'] = document_count
+        for table in (
+            'source_collections', 'vulnerabilities', 'operational_stages',
+            'evidence_links', 'validation_records',
+        ):
+            result[table] = conn.execute(f'SELECT COUNT(*) FROM {table}').fetchone()[0]
+        result['by_source'] = {
+            row['name']: row['cnt'] for row in conn.execute('''
+                SELECT s.name, COUNT(*) AS cnt
+                FROM source_collections s JOIN writeups w ON w.source_collection_id=s.id
+                WHERE w.writeup_type=?
+                GROUP BY s.name ORDER BY s.name
+            ''', ('research',))
+        }
+        result['by_domain'] = {
+            row['domain']: row['cnt'] for row in conn.execute('''
+                SELECT domain, COUNT(*) AS cnt FROM writeups
+                WHERE writeup_type=? AND domain IS NOT NULL AND domain<>?
+                GROUP BY domain ORDER BY domain
+            ''', ('research', ''))
+        }
+        result['validation_by_status'] = {
+            row['status']: row['cnt'] for row in conn.execute('''
+                SELECT status, COUNT(*) AS cnt FROM validation_records
+                WHERE status IS NOT NULL AND status<>?
+                GROUP BY status ORDER BY status
+            ''', ('',))
+        }
+        return result
 
     def clear_writeup_data(self, writeup_id: int):
         """Clear commands, scripts, chunks, and technique links for a writeup (for re-indexing)."""

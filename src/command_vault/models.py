@@ -1,6 +1,9 @@
 """Pydantic models for Command Vault."""
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl, WrapValidator, field_serializer
+from pydantic import (
+    BaseModel, ConfigDict, Field, HttpUrl, JsonValue, TypeAdapter, WrapValidator,
+    field_serializer, field_validator,
+)
 from typing import Annotated, Literal, Optional
 from enum import Enum
 import re
@@ -81,6 +84,36 @@ _RESEARCH_PATH_SEGMENT = (
 _RESEARCH_PATH_PATTERN = re.compile(
     rf"^{_RESEARCH_PATH_SEGMENT}(?:/{_RESEARCH_PATH_SEGMENT})*(?![\s\S])"
 )
+_ResearchRelativePath = Annotated[str, Field(min_length=1, pattern=_RESEARCH_PATH_PATTERN)]
+
+
+class _ResearchJsonValueSchema:
+    """Expose JsonValue's recursive types instead of its unconstrained JSON schema."""
+
+    @classmethod
+    def __get_pydantic_json_schema__(cls, core_schema, handler):
+        reference = handler(core_schema)
+        definition = handler.resolve_ref_schema(reference)
+        # Use the handler's reference so Pydantic can resolve and rename $defs
+        # consistently, including when this annotation is reused elsewhere.
+        definition.update({
+            "anyOf": [
+                {"type": "null"},
+                {"type": "boolean"},
+                {"type": "integer"},
+                {"type": "number"},
+                {"type": "string"},
+                {"type": "array", "items": dict(reference)},
+                {"type": "object", "additionalProperties": dict(reference)},
+            ]
+        })
+        return reference
+
+
+ResearchJsonValue = Annotated[JsonValue, _ResearchJsonValueSchema]
+_RESEARCH_JSON_METADATA = TypeAdapter(
+    dict[str, ResearchJsonValue], config=ConfigDict(strict=True, allow_inf_nan=False)
+)
 _RESEARCH_URL_PATTERN = r"^https?://[^/?#@]+(?:[/?#]|$)"
 
 
@@ -131,10 +164,11 @@ class ResearchVulnerability(_ResearchContract):
     platform: Optional[str] = None
     subsystem: Optional[str] = None
     summary: Optional[str] = None
+    summary_provenance: Optional[AssertionProvenance] = None
 
 
 class ResearchArtifact(_ResearchContract):
-    path: str = Field(min_length=1, pattern=_RESEARCH_PATH_PATTERN)
+    path: _ResearchRelativePath
     kind: str = Field(min_length=1)
     role: EvidenceRole
     validation: ValidationStatus = ValidationStatus.UNKNOWN
@@ -144,6 +178,24 @@ class ResearchArtifact(_ResearchContract):
     media_type: Optional[str] = None
     language: Optional[str] = None
     license_expression: Optional[str] = None
+
+
+class ResearchOperationalStage(_ResearchContract):
+    canonical_name: str = Field(min_length=1)
+    stage_class: OperationalStageClass
+    assertion_provenance: AssertionProvenance
+    description: Optional[str] = None
+    matched_alias: str = Field(min_length=1)
+    evidence_sections: list[Annotated[str, Field(min_length=1)]] = Field(
+        default_factory=list, json_schema_extra={"uniqueItems": True}
+    )
+
+    @field_validator("evidence_sections")
+    @classmethod
+    def unique_evidence_sections(cls, value):
+        if len(value) != len(set(value)):
+            raise ValueError("Evidence sections must not contain duplicates")
+        return value
 
 
 class ResearchManifest(_ResearchContract):
@@ -156,6 +208,29 @@ class ResearchManifest(_ResearchContract):
     document_kind: Optional[str] = None
     vulnerability: Optional[ResearchVulnerability] = None
     artifacts: list[ResearchArtifact] = Field(default_factory=list)
+    source_path: Optional[_ResearchRelativePath] = None
+    source_metadata: dict[str, ResearchJsonValue] = Field(default_factory=dict)
+    operational_stages: list[ResearchOperationalStage] = Field(
+        default_factory=list,
+        description=(
+            "Stages in source order; each (canonical_name, matched_alias) pair must be unique. "
+            "Pair uniqueness is enforced by the manifest validator."
+        ),
+        json_schema_extra={"uniqueItems": True},
+    )
+
+    @field_validator("source_metadata", mode="before")
+    @classmethod
+    def strict_json_metadata(cls, value):
+        return _RESEARCH_JSON_METADATA.validate_python(value)
+
+    @field_validator("operational_stages")
+    @classmethod
+    def unique_operational_stages(cls, value):
+        pairs = [(stage.canonical_name, stage.matched_alias) for stage in value]
+        if len(pairs) != len(set(pairs)):
+            raise ValueError("Operational stage (canonical_name, matched_alias) pairs must be unique")
+        return value
 
 
 class Difficulty(str, Enum):
@@ -267,6 +342,7 @@ class VaultStats(BaseModel):
     tools: dict  # {total, top_10}
     chunks: Optional[dict] = None  # {total}
     history: Optional[dict] = None  # {total, unique_tools, top_tools, sources}
+    research: Optional[dict] = None
 
 
 class IndexResult(BaseModel):

@@ -22,6 +22,50 @@
       "title": "EvidenceRole",
       "type": "string"
     },
+    "JsonValue": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "object"
+        }
+      ]
+    },
+    "OperationalStageClass": {
+      "enum": [
+        "reach",
+        "trigger",
+        "diagnose",
+        "primitive",
+        "control",
+        "objective",
+        "remediation"
+      ],
+      "title": "OperationalStageClass",
+      "type": "string"
+    },
     "ResearchArtifact": {
       "additionalProperties": false,
       "properties": {
@@ -101,6 +145,56 @@
         "role"
       ],
       "title": "ResearchArtifact",
+      "type": "object"
+    },
+    "ResearchOperationalStage": {
+      "additionalProperties": false,
+      "properties": {
+        "canonical_name": {
+          "minLength": 1,
+          "title": "Canonical Name",
+          "type": "string"
+        },
+        "stage_class": {
+          "$ref": "#/$defs/OperationalStageClass"
+        },
+        "assertion_provenance": {
+          "$ref": "#/$defs/AssertionProvenance"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "matched_alias": {
+          "minLength": 1,
+          "title": "Matched Alias",
+          "type": "string"
+        },
+        "evidence_sections": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": "Evidence Sections",
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "canonical_name",
+        "stage_class",
+        "assertion_provenance",
+        "matched_alias"
+      ],
+      "title": "ResearchOperationalStage",
       "type": "object"
     },
     "ResearchSource": {
@@ -274,6 +368,17 @@
           ],
           "default": null,
           "title": "Summary"
+        },
+        "summary_provenance": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AssertionProvenance"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "title": "ResearchVulnerability",
@@ -303,19 +408,6 @@
         "research"
       ],
       "title": "SourceCollectionKind",
-      "type": "string"
-    },
-    "OperationalStageClass": {
-      "enum": [
-        "reach",
-        "trigger",
-        "diagnose",
-        "primitive",
-        "control",
-        "objective",
-        "remediation"
-      ],
-      "title": "OperationalStageClass",
       "type": "string"
     },
     "StageRelation": {
@@ -403,6 +495,36 @@
       },
       "title": "Artifacts",
       "type": "array"
+    },
+    "source_path": {
+      "anyOf": [
+        {
+          "minLength": 1,
+          "pattern": "^(?:[^./\\\\\\u0000-\\u001f\\u007f][^/\\\\\\u0000-\\u001f\\u007f]*|\\.[^./\\\\\\u0000-\\u001f\\u007f][^/\\\\\\u0000-\\u001f\\u007f]*|\\.\\.[^/\\\\\\u0000-\\u001f\\u007f]+)(?:/(?:[^./\\\\\\u0000-\\u001f\\u007f][^/\\\\\\u0000-\\u001f\\u007f]*|\\.[^./\\\\\\u0000-\\u001f\\u007f][^/\\\\\\u0000-\\u001f\\u007f]*|\\.\\.[^/\\\\\\u0000-\\u001f\\u007f]+))*(?![\\s\\S])",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Source Path"
+    },
+    "source_metadata": {
+      "additionalProperties": {
+        "$ref": "#/$defs/JsonValue"
+      },
+      "title": "Source Metadata",
+      "type": "object"
+    },
+    "operational_stages": {
+      "description": "Stages in source order; each (canonical_name, matched_alias) pair must be unique. Pair uniqueness is enforced by the manifest validator.",
+      "items": {
+        "$ref": "#/$defs/ResearchOperationalStage"
+      },
+      "title": "Operational Stages",
+      "type": "array",
+      "uniqueItems": true
     }
   },
   "required": [

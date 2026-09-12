@@ -1,6 +1,8 @@
 """Validation and serialized-contract coverage for normalized research bundles."""
 
 import json
+from datetime import datetime
+from decimal import Decimal
 from pathlib import Path
 import re
 
@@ -12,12 +14,15 @@ from command_vault.models import (
     EvidenceRole,
     OperationalStageClass,
     ResearchArtifact,
+    ResearchJsonValue,
     ResearchManifest,
+    ResearchOperationalStage,
     ResearchSource,
     ResearchVulnerability,
     SourceCollectionKind,
     StageRelation,
     ValidationStatus,
+    VaultStats,
     WriteupType,
 )
 
@@ -66,11 +71,19 @@ def test_illustrative_manifest_round_trip(manifest_data):
             "class_provenance": "source", "sanitizer": "address",
             "architecture": "x86_64", "platform": "linux", "subsystem": "parser",
             "summary": "Illustrative source metadata.",
+            "summary_provenance": "source",
         },
         "artifacts": [{
             "path": "notes/analysis.md", "kind": "analysis", "role": "signal",
             "validation": "source_documented", "sha256": "a" * 64,
             "media_type": "text/markdown", "language": "markdown", "license_expression": None,
+        }],
+        "source_path": "records/example/task.json",
+        "source_metadata": {"labels": ["example", None], "details": {"count": 1, "score": 0.5, "active": True}},
+        "operational_stages": [{
+            "canonical_name": "analysis", "stage_class": "diagnose",
+            "assertion_provenance": "deterministic", "description": "A mapped heading.",
+            "matched_alias": "Analysis", "evidence_sections": ["Overview", "Analysis"],
         }],
     })
     manifest = ResearchManifest.model_validate(manifest_data)
@@ -84,6 +97,10 @@ def test_illustrative_manifest_round_trip(manifest_data):
     assert json.loads(manifest.model_dump_json())["artifacts"][0]["validation"] == "source_documented"
     assert dumped["source"]["license_expression"] is None
     assert dumped["artifacts"][0]["license_expression"] is None
+    assert dumped["source_path"] == manifest_data["source_path"]
+    assert dumped["source_metadata"] == manifest_data["source_metadata"]
+    assert dumped["operational_stages"] == manifest_data["operational_stages"]
+    assert dumped["vulnerability"]["summary_provenance"] == "source"
 
 
 def test_vulnerability_accepts_python_name_and_serializes_alias():
@@ -228,7 +245,7 @@ def test_committed_schema_matches_pydantic_serialized_contract():
     committed = json.loads(SCHEMA_PATH.read_text())
     assert committed.pop("$schema") == "https://json-schema.org/draft/2020-12/schema"
     assert committed.pop("$id") == "urn:command-vault:research-bundle:v1"
-    for enum_type in (SourceCollectionKind, OperationalStageClass, StageRelation):
+    for enum_type in (SourceCollectionKind, StageRelation):
         assert committed["$defs"].pop(enum_type.__name__) == TypeAdapter(enum_type).json_schema()
     assert committed == ResearchManifest.model_json_schema(mode="serialization", by_alias=True)
 
@@ -237,7 +254,7 @@ def test_schema_constraints_cover_paths_enums_urls_and_null_licenses():
     schema = json.loads(SCHEMA_PATH.read_text())
     for enum_type, values in ENUM_VALUES.items():
         assert schema["$defs"][enum_type.__name__]["enum"] == values
-    for name in ("ResearchSource", "ResearchVulnerability", "ResearchArtifact"):
+    for name in ("ResearchSource", "ResearchVulnerability", "ResearchArtifact", "ResearchOperationalStage"):
         assert schema["$defs"][name]["additionalProperties"] is False
     assert schema["additionalProperties"] is False
     artifact = schema["$defs"]["ResearchArtifact"]["properties"]
@@ -256,3 +273,163 @@ def test_schema_constraints_cover_paths_enums_urls_and_null_licenses():
     for properties in (source, artifact):
         assert properties["license_expression"]["default"] is None
         assert {"type": "null"} in properties["license_expression"]["anyOf"]
+
+
+@pytest.fixture
+def stage_data():
+    return {
+        "canonical_name": "analysis", "stage_class": "diagnose", "matched_alias": "Analysis",
+        "assertion_provenance": "deterministic",
+    }
+
+
+@pytest.mark.parametrize("sections", [[""], ["Overview", ""], ["Overview", "Overview"], [None], [1], "Overview"])
+def test_invalid_evidence_sections(stage_data, sections):
+    with pytest.raises(ValidationError):
+        ResearchOperationalStage(**stage_data, evidence_sections=sections)
+
+
+@pytest.mark.parametrize("field,value", [
+    ("canonical_name", ""), ("matched_alias", ""), ("stage_class", "unknown"),
+    ("assertion_provenance", "unknown"), ("assertion_provenance", None),
+    ("unexpected", "value"),
+])
+def test_invalid_operational_stage_fields(stage_data, field, value):
+    with pytest.raises(ValidationError):
+        ResearchOperationalStage(**{**stage_data, field: value})
+
+
+def test_operational_stage_requires_assertion_provenance(stage_data):
+    del stage_data["assertion_provenance"]
+    with pytest.raises(ValidationError, match="assertion_provenance"):
+        ResearchOperationalStage(**stage_data)
+
+
+@pytest.mark.parametrize("overrides", [{}, {"description": "Different description"}, {"evidence_sections": ["Different"]}, {"stage_class": "objective"}])
+def test_duplicate_stage_pairs_rejected(manifest_data, stage_data, overrides):
+    with pytest.raises(ValidationError, match="pairs must be unique"):
+        ResearchManifest(**manifest_data, operational_stages=[stage_data, {**stage_data, **overrides}])
+
+
+def test_evidence_sections_and_distinct_stage_pairs_preserve_order(manifest_data, stage_data):
+    stages = [
+        {**stage_data, "evidence_sections": ["Z", "A"]},
+        {**stage_data, "matched_alias": "Review"},
+        {**stage_data, "canonical_name": "review"},
+    ]
+    manifest = ResearchManifest(**manifest_data, operational_stages=stages)
+    assert [(s.canonical_name, s.matched_alias) for s in manifest.operational_stages] == [
+        ("analysis", "Analysis"), ("analysis", "Review"), ("review", "Analysis"),
+    ]
+    assert manifest.operational_stages[0].evidence_sections == ["Z", "A"]
+    assert ResearchManifest.model_validate_json(manifest.model_dump_json()) == manifest
+
+
+@pytest.mark.parametrize("path", UNSAFE_PATHS)
+def test_unsafe_source_paths(manifest_data, path):
+    with pytest.raises(ValidationError):
+        ResearchManifest(**manifest_data, source_path=path)
+
+
+@pytest.mark.parametrize("codepoint", [*range(32), 127])
+def test_source_path_rejects_all_ascii_controls(manifest_data, codepoint):
+    with pytest.raises(ValidationError):
+        ResearchManifest(**manifest_data, source_path="notes/" + chr(codepoint) + "file.json")
+
+
+@pytest.mark.parametrize("path", [None, *SAFE_PATHS])
+def test_safe_source_paths(manifest_data, path):
+    assert ResearchManifest(**manifest_data, source_path=path).source_path == path
+
+
+@pytest.mark.parametrize("value", [
+    (1, 2), {1, 2}, frozenset({1}), b"bytes", Decimal("1.5"), datetime(2026, 1, 1),
+    Path("notes.md"), object(), float("nan"), float("inf"), float("-inf"),
+    {1: "value"}, {b"key": "value"},
+])
+def test_source_metadata_rejects_non_json_recursive_values(manifest_data, value):
+    for metadata in ({"value": value}, {"nested": [{"value": value}]}):
+        with pytest.raises(ValidationError):
+            ResearchManifest(**manifest_data, source_metadata=metadata)
+
+
+@pytest.mark.parametrize("metadata", [None, [], [("key", "value")], {1: "value"}, {b"key": "value"}])
+def test_source_metadata_requires_json_object(manifest_data, metadata):
+    with pytest.raises(ValidationError):
+        ResearchManifest(**manifest_data, source_metadata=metadata)
+
+
+def test_new_collection_defaults_are_independent(manifest_data, stage_data):
+    first = ResearchManifest(**manifest_data)
+    second = ResearchManifest(**manifest_data)
+    first.source_metadata["extra"] = {"values": [1]}
+    first.operational_stages.append(ResearchOperationalStage(**stage_data))
+    first.operational_stages[0].evidence_sections.append("Overview")
+    other_stage = ResearchOperationalStage(**stage_data)
+    assert second.source_metadata == {}
+    assert second.operational_stages == []
+    assert other_stage.evidence_sections == []
+    assert second.source_path is None
+    assert ResearchManifest.model_fields["source_metadata"].default_factory is dict
+    assert ResearchManifest.model_fields["operational_stages"].default_factory is list
+    assert ResearchOperationalStage.model_fields["evidence_sections"].default_factory is list
+
+
+@pytest.mark.parametrize("provenance", [None, *AssertionProvenance])
+def test_summary_provenance_round_trip(provenance):
+    vulnerability = ResearchVulnerability(summary="Source summary", summary_provenance=provenance)
+    assert ResearchVulnerability.model_validate_json(vulnerability.model_dump_json()) == vulnerability
+    assert vulnerability.summary_provenance == provenance
+
+
+def test_unknown_summary_provenance_is_rejected():
+    with pytest.raises(ValidationError):
+        ResearchVulnerability(summary_provenance="invented")
+
+
+def test_extended_schema_constraints():
+    schema = json.loads(SCHEMA_PATH.read_text())
+    properties = schema["properties"]
+    source_path = properties["source_path"]["anyOf"][0]
+    artifact_path = schema["$defs"]["ResearchArtifact"]["properties"]["path"]
+    assert source_path == {key: value for key, value in artifact_path.items() if key != "title"}
+    assert properties["source_metadata"]["type"] == "object"
+    assert properties["source_metadata"]["additionalProperties"] == {"$ref": "#/$defs/JsonValue"}
+    stage = schema["$defs"]["ResearchOperationalStage"]
+    assert stage["additionalProperties"] is False
+    assert "assertion_provenance" in stage["required"]
+    assert stage["properties"]["evidence_sections"]["uniqueItems"] is True
+    assert stage["properties"]["evidence_sections"]["items"]["minLength"] == 1
+    assert properties["operational_stages"]["uniqueItems"] is True
+    assert "(canonical_name, matched_alias)" in properties["operational_stages"]["description"]
+    assert properties["schema_version"]["const"] == 1
+
+
+@pytest.mark.parametrize("mode", ["validation", "serialization"])
+def test_json_value_schema_is_explicit_recursive_and_reusable(mode):
+    reference = {"$ref": "#/$defs/JsonValue"}
+    expected = {
+        "anyOf": [
+            {"type": "null"}, {"type": "boolean"}, {"type": "integer"},
+            {"type": "number"}, {"type": "string"},
+            {"type": "array", "items": reference},
+            {"type": "object", "additionalProperties": reference},
+        ],
+    }
+    committed = json.loads(SCHEMA_PATH.read_text())
+    assert committed["$defs"]["JsonValue"] == expected
+    assert committed["$defs"]["JsonValue"] != {}
+    model_schema = ResearchManifest.model_json_schema(mode=mode)
+    assert model_schema["$defs"]["JsonValue"] == expected
+    reusable_schema = TypeAdapter(dict[str, ResearchJsonValue]).json_schema(mode=mode)
+    assert reusable_schema["$defs"]["JsonValue"] == expected
+    assert reusable_schema["additionalProperties"] == reference
+
+
+def test_vault_stats_optional_research_totals():
+    base = {"writeups": {}, "commands": {}, "scripts": {}, "tools": {}}
+    assert VaultStats(**base).research is None
+    research = {"sources": 2, "records": 3}
+    dumped = VaultStats(**base, research=research).model_dump()
+    assert dumped["research"] == research
+    assert all(dumped[key] == value for key, value in base.items())
