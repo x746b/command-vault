@@ -43,13 +43,11 @@ PyPI and GitHub releases are published separately; pin a version when you need r
 
 ## Quick Start
 
-Point `WRITEUPS` at an existing directory containing your Markdown sources:
+Add or edit personal Markdown beneath `~/writeups`, then incrementally update
+the default vault with the tested one-liner:
 
 ~~~bash
-export WRITEUPS="$HOME/writeups"
-
-# Create or incrementally update the index; a rebuild is not required
-vault index
+WRITEUPS="$HOME/writeups" vault --json index --add
 vault stats
 
 # Search commands or explanatory evidence
@@ -167,6 +165,17 @@ vault index --rebuild                    # Clear all writeup data first; preserv
 
 Sources use canonical filepath identity, content hashes, and parser versions. Each document import
 is atomic. Incremental indexing does not automatically prune deleted or moved sources.
+
+For routine personal-writeup additions, use:
+
+~~~bash
+WRITEUPS="$HOME/writeups" vault --json index --add
+~~~
+
+An existing canonical `$WRITEUPS/research` managed tree is automatically excluded even when
+`WRITEUPS_RESEARCH` is not exported. See
+[`docs/research-knowledge/SAFE-INDEXING.md`](docs/research-knowledge/SAFE-INDEXING.md) for the tested
+workflow, explicit-path form, backup and integrity checks, and managed-source rules.
 
 `--rebuild` clears **all writeup content**, then imports the selected directories. It is not required
 on first use and does not delete indexed history. Prefer the candidate-database workflow in
