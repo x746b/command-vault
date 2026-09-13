@@ -468,6 +468,13 @@ and compatible-pair rollback procedures are fixed in `PROMOTION.md`,
 `RESTORE.md`, and `ROLLBACK.md`. The release remains pre-promotion and requires
 the explicit decisions in `RELEASE-CANDIDATE.md`.
 
+The initial real audit exposed a quadratic manifest-join loop and was stopped
+before publication. Daybreak replaced it with one-pass bundle grouping, added a
+stray-file rejection test, and reran the full suite: 14 focused release-audit
+tests and 1,173 total tests pass. The real audit then verified 8,944 files and
+1,753 research documents in 2.2 seconds and published only restrictive
+`0700`/`0600` local manifest output.
+
 ## Acceptance notes
 
 The implementation plan remains the governing contract. Passing a subagent's

@@ -250,6 +250,16 @@ def _database_audit(connection: sqlite3.Connection, root: Path, files: dict[str,
     # Every directory with a manifest is a bundle.  It must be fully declared,
     # loader-valid, and matched to exactly one database research document.
     manifests = [key for key in files if Path(key).name == 'manifest.json']
+    manifest_bundles = {str(Path(path).parent) for path in manifests}
+    files_by_bundle: dict[str, set[str]] = {bundle: set() for bundle in manifest_bundles}
+    for path in files:
+        parts = Path(path).parts
+        if len(parts) < 3:
+            _fail('Managed research file is outside a declared bundle')
+        bundle_relative = Path(*parts[:2]).as_posix()
+        if bundle_relative not in files_by_bundle:
+            _fail('Managed research file is outside a declared bundle')
+        files_by_bundle[bundle_relative].add(Path(*parts[2:]).as_posix())
     for manifest_relative in manifests:
         bundle_relative = str(Path(manifest_relative).parent)
         if bundle_relative not in bundle_info:
@@ -263,10 +273,7 @@ def _database_audit(connection: sqlite3.Connection, root: Path, files: dict[str,
         except (OSError, ValueError):
             _fail('Managed research bundle is invalid')
         allowed = {'manifest.json', 'document.md', *(item.path for item in loaded.manifest.artifacts)}
-        actual = {
-            str(Path(path).relative_to(bundle_relative)).replace(os.sep, '/')
-            for path in files if Path(path).is_relative_to(Path(bundle_relative))
-        }
+        actual = files_by_bundle[bundle_relative]
         if actual != allowed:
             _fail('Managed research bundle contains undeclared files')
         info = bundle_info[bundle_relative]
@@ -282,7 +289,7 @@ def _database_audit(connection: sqlite3.Connection, root: Path, files: dict[str,
                 _fail('Managed research artifact hash does not match enumerated content')
         info.update({'source': loaded.manifest.source.name, 'revision': loaded.manifest.source.revision,
                      'external_id': loaded.manifest.external_id, 'content_hash': loaded.document_sha256})
-    if set(bundle_info) != {str(Path(path).parent) for path in manifests}:
+    if set(bundle_info) != manifest_bundles:
         _fail('Research database document has no managed bundle')
     scripts = connection.execute('''SELECT s.id,s.writeup_id,s.code,s.artifact_hash,s.normalized_hash
         FROM scripts s JOIN writeups w ON w.id=s.writeup_id WHERE w.writeup_type='research' ORDER BY s.id''').fetchall()
@@ -378,8 +385,8 @@ def audit_research_release(database: str | Path, research_root: str | Path, outp
     corpus_files = []
     for relative, entry in files.items():
         item = dict(entry)
-        candidates = [name for name in bundles if Path(relative).is_relative_to(Path(name))]
-        bundle = bundles[max(candidates, key=lambda value: len(Path(value).parts))] if candidates else None
+        parts = Path(relative).parts
+        bundle = bundles.get(Path(*parts[:2]).as_posix()) if len(parts) >= 3 else None
         if bundle:
             item.update({
                 'source': bundle['source'], 'revision': bundle['revision'],

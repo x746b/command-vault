@@ -26,7 +26,7 @@ def audit_module():
 @pytest.fixture
 def candidate(tmp_path, monkeypatch):
     root = tmp_path / 'managed'
-    bundle = root / 'fixture'
+    bundle = root / 'fixture-source' / 'fixture'
     bundle.mkdir(parents=True)
     document = '# Fixture\n\nA fully managed research document.\n'
     (bundle / 'document.md').write_text(document, encoding='utf-8')
@@ -50,7 +50,7 @@ def candidate(tmp_path, monkeypatch):
     spec = importlib.util.spec_from_file_location('audit_builder_module', builder_path)
     builder = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(builder)
-    builder.build_candidate(baseline, destination, root, managed_root=root)
+    builder.build_candidate(baseline, destination, root / 'fixture-source', managed_root=root)
     destination.chmod(0o600)
     lock = tmp_path / 'sources.lock'
     lock_bytes = b'{"sources":["fixture"]}\n'
@@ -83,6 +83,9 @@ def test_success_is_deterministic_create_only_and_content_free(audit_module, can
     ]
     assert (first / 'SOURCES.lock.json').read_bytes() == candidate['lock_bytes']
     assert report['counts'] == {'corpus_files': 3, 'research_documents': 1}
+    corpus = json.loads((first / 'RESEARCH-CORPUS-MANIFEST.json').read_text())
+    assert all((item['source'], item['revision'], item['external_id']) == ('Fixture source', 'r1', 'fixture-1')
+               for item in corpus['files'])
     for name in (path.name for path in first.iterdir()):
         assert (first / name).read_bytes() == (second / name).read_bytes()
     assert str(candidate['root']) not in (first / 'RESEARCH-CORPUS-MANIFEST.json').read_text()
@@ -102,7 +105,7 @@ def test_success_is_deterministic_create_only_and_content_free(audit_module, can
 @pytest.mark.parametrize('fault', ['hash', 'snapshot', 'foreign_key', 'duplicate', 'orphan', 'script', 'mode', 'schema'])
 def test_database_validation_failures_publish_nothing(audit_module, candidate, tmp_path, fault):
     if fault == 'hash':
-        (candidate['root'] / 'fixture' / 'document.md').write_text('changed', encoding='utf-8')
+        (candidate['root'] / 'fixture-source' / 'fixture' / 'document.md').write_text('changed', encoding='utf-8')
     elif fault == 'snapshot':
         with sqlite3.connect(candidate['db']) as conn:
             conn.execute("UPDATE document_snapshots SET content_blob=X'00'")
@@ -133,13 +136,15 @@ def test_database_validation_failures_publish_nothing(audit_module, candidate, t
     assert not output.exists()
 
 
-@pytest.mark.parametrize('fault', ['symlink', 'undeclared', 'nonregular', 'bound'])
+@pytest.mark.parametrize('fault', ['symlink', 'undeclared', 'orphan-file', 'nonregular', 'bound'])
 def test_corpus_validation_failures_publish_nothing(audit_module, candidate, tmp_path, fault):
-    bundle = candidate['root'] / 'fixture'
+    bundle = candidate['root'] / 'fixture-source' / 'fixture'
     if fault == 'symlink':
         (bundle / 'linked').symlink_to(bundle / 'document.md')
     elif fault == 'undeclared':
         (bundle / 'private.bin').write_bytes(b'not declared')
+    elif fault == 'orphan-file':
+        (candidate['root'] / 'loose.txt').write_bytes(b'not in a bundle')
     elif fault == 'nonregular':
         os.mkfifo(bundle / 'pipe')
     output = tmp_path / f'bad-{fault}'
