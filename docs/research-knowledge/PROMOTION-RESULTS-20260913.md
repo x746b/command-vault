@@ -104,6 +104,14 @@ Added only `WRITEUPS_RESEARCH=/home/xtk/writeups/research` to:
 
 The dated pre-v2 configuration backup was not modified. TOML and YAML parsing succeeded after the edits.
 
+Post-edit configuration hashes:
+
+| Configuration | SHA-256 |
+|---|---|
+| Codex | `b80ad008ef1c7ea07cbd122013ed19ef489d5a49a9b859113a9ed9ae3c6049aa` |
+| Goose | `510c5f578ae3c043ed8159ead84a53dd7c653b9eee281313a43bab04fd436f92` |
+| Goose pentest recipe | `3e273dc8a1c864c04f85aad871237bcfced4a91dbcab19c842313eda3e62452a` |
+
 Two command-vault server processes belonging to the already-running Codex parent predated this release. They were not terminated because this session's negotiated tool catalog cannot be refreshed in place. New Codex/Goose sessions will load the new code, schema, managed source root, and tool catalog.
 
 ## Production smoke verification
@@ -120,6 +128,8 @@ Read-only CLI checks passed for:
 A fresh in-process MCP server negotiated 20 read-only tools, including vulnerability and operational-stage profiles. Administrative tools were absent. Structured stats, profile, search, and managed context calls passed.
 
 The production database SHA-256 remained unchanged after all read-only CLI and MCP smoke calls.
+
+A second full release audit was run against the actually installed production DB and corpus. It verified all 8,944 files, 1,753 managed DB document mappings, and embedded snapshots. The production-audit release manifest SHA-256 is `38b6f7d63c81068d9d4f222cb44b011af9cdc1d68aa58b18708a51a08257962c`; its files are retained under the persistent release directory.
 
 ## Remaining work
 
