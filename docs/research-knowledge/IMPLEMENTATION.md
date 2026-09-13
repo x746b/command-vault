@@ -454,6 +454,20 @@ The final integrated suite passes 1,159 tests. The live database SHA-256 remains
 no production path, configuration, service, database, or Git remote was
 changed.
 
+### 2026-09-13 — Phase 7 pre-promotion acceptance
+
+#### Public model task-packet ledger
+
+| Task | Model | Objective | Owned files | Forbidden actions | Tests/status |
+|---|---|---|---|---|---|
+| release manifest auditor | `gpt-5.6-terra` | Read-only DB/corpus verification and create-only per-file manifests | audit script and focused tests | archive/promotion/cleanup/network/external writes/DB mutation/delegation | complete; 13 focused and 1,172 full before integration |
+
+Daybreak completed the operator, security, license, provenance, Git, and p95
+reviews recorded in `EVALUATION.md` and `SECURITY.md`. Promotion, restoration,
+and compatible-pair rollback procedures are fixed in `PROMOTION.md`,
+`RESTORE.md`, and `ROLLBACK.md`. The release remains pre-promotion and requires
+the explicit decisions in `RELEASE-CANDIDATE.md`.
+
 ## Acceptance notes
 
 The implementation plan remains the governing contract. Passing a subagent's

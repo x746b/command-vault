@@ -42,3 +42,7 @@ There is no in-place down-migration. Before production promotion, retain the
 matching old application commit and verified old database backup. Rollback means
 restoring that pair atomically after disconnecting only command-vault clients.
 Never run an old writable application against schema v2.
+
+Production installation is governed by `PROMOTION.md`; post-revert recovery by
+`RESTORE.md`; and compatible-pair recovery by `ROLLBACK.md`. None of those
+procedures is authorized merely by completing a candidate migration.
