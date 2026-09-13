@@ -145,3 +145,23 @@ currently absent from production (`Management.md` and `Dump-official.md`), then
 processed zero files on repetition. SQLite integrity remained `ok` with no
 foreign-key violations. The production database itself was not opened for
 writing.
+
+Exact real-copy changes were:
+
+| State | Before | After |
+|---|---:|---:|
+| total writeups | 2,612 | 2,614 |
+| boxes | 335 | 337 |
+| challenges | 340 | 340 |
+| Sherlocks | 184 | 184 |
+| research writeups | 1,753 (IDs 860–2612) | 1,753 (IDs 860–2612) |
+| vulnerability profiles | 1,752 (IDs 1576–3327) | unchanged |
+| research scripts | 345 (IDs 1256–1600) | unchanged |
+| research chunks | 32,034 (IDs 87936–119969) | unchanged |
+| evidence links | 30,296 (IDs 28207–58502) | unchanged |
+| research snapshots | 1,753 (writeup IDs 860–2612) | unchanged |
+
+The only inserted rows were ID 2613,
+`/home/xtk/writeups/boxes/Management.md`, and ID 2614,
+`/home/xtk/writeups/boxes/_official_/Dump-official.md`, both classified as
+personal box writeups. No research record changed type or identity.
