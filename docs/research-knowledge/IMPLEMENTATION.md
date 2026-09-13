@@ -522,9 +522,19 @@ construction, MCP/CLI checks, and release audit. The complete ledger and exact
 candidate evidence are in `PRE-V1-POLISH-20260913.md`.
 
 The candidate preserves all existing public research document, vulnerability,
-chunk, and script IDs. The integrated suite passes 1,198 tests. Production and
+chunk, and script IDs. The final integrated suite, including the subsequent
+legacy-index safety correction, passes 1,205 tests. Production and
 the Git remote remain unchanged pending the explicit replacement and release
 checkpoints.
+
+Candidate-only follow-up testing then found that omitting `WRITEUPS_RESEARCH`
+from a legacy `index --add` process allowed the parent `WRITEUPS` scan to parse
+managed bundle documents as ordinary writeups. The release was blocked. The
+fix auto-detects an existing canonical nested research root and adds an
+independent managed-bundle shape guard at the legacy discovery and direct-file
+boundaries. The exact environment/CLI regression preserves all structured
+research state across repeated `--add` calls while adding only new personal
+material. Full details are recorded in `PRE-V1-POLISH-20260913.md`.
 
 ## Acceptance notes
 

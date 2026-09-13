@@ -44,6 +44,15 @@ Markdown scanner excludes the resolved managed subtree before recursive
 discovery. This prevents the same generated `document.md` from being indexed a
 second time and misclassified as a box/challenge/Sherlock writeup.
 
+When `WRITEUPS_RESEARCH` is absent, an existing canonical `<WRITEUPS>/research`
+directory is detected automatically. The legacy indexer independently excludes
+that nested path and recognizes every Markdown path beneath a directory with a
+bundle `manifest.json` before parsing, including documents and artifacts under
+custom administrative roots. Direct legacy ingestion of a managed file is
+refused. These layers prevent a
+simple `vault index --add` from replacing structured research rows with legacy
+writeup records.
+
 The exclusion is path-aware: resolve both roots, require the managed root to be
 inside the general root before excluding it, and do not use a textual-prefix
 test. Generated managed files are updated only by reviewed adapters and verified

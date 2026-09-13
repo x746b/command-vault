@@ -12,6 +12,10 @@
   infer an introduced revision or local reproduction.
 - Retained C/syz reproducers are untrusted, non-executed evidence. Preserve
   `source_documented` versus `harness_observed`; neither means `reproduced_local`.
+- Administrative `vault index --add` auto-detects an existing canonical
+  `<WRITEUPS>/research` tree when `WRITEUPS_RESEARCH` is omitted. Managed bundle
+  documents and Markdown artifacts are always excluded from legacy ingestion;
+  do not bypass this separation by indexing a bundle file directly.
 
 ## Version 0.9.1 additions
 

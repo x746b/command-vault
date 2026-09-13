@@ -85,7 +85,7 @@ fresh 8,944-file managed-corpus staging tree:
 - release audit: 8,944 files and 1,753 research documents
 - release-manifest SHA-256 before the final code commit:
   `572779c3f8279e4b5076b6e29f194fc24f1d5538a671dd447434504063db5476`
-- full suite: 1,198 tests passed
+- full suite after the index-safety correction: 1,205 tests passed
 - isolated MCP: 20 read-only tools; candidate bytes unchanged after smoke tests
 
 After code checkpoint `36c0ba68ba3e4eb72c289f8df7719224ae611fe0`, a
@@ -110,3 +110,38 @@ polish. Before the v1.0 release push/tag, build the production-path release
 copy from this accepted candidate, audit it against the corrected managed
 corpus, create a new exact pre-replacement backup, atomically install the pair
 only after explicit user approval, and repeat CLI/MCP/read-only byte checks.
+
+## Release-blocking legacy-index safety correction
+
+Post-polish testing reproduced a destructive candidate-only edge case when a
+caller supplied the unified writeup root but omitted `WRITEUPS_RESEARCH`:
+
+```bash
+env -u WRITEUPS_RESEARCH \
+  VAULT_DB=<candidate-copy.db> \
+  WRITEUPS=/home/xtk/writeups \
+  vault --json index --add
+```
+
+The corrected configuration auto-detects the existing canonical
+`<WRITEUPS>/research` root. The legacy indexer also excludes the nested root on
+its own, skips every Markdown document or artifact beneath a managed bundle
+`manifest.json` under any unified or custom parent, and refuses direct legacy
+indexing of a managed file. Explicit `WRITEUPS_RESEARCH`, equal-root refusal, symlink rejection,
+custom directories, and roots without a research child retain their tested
+behavior.
+
+The exact subprocess regression builds a disposable schema-v2 database with a
+structured research document/profile/chunk/C script/snapshot/stage/evidence
+set. The first command adds only a new `Dump.md`; the repeated command processes
+zero files. Every research ID, row, snapshot, evidence link, and validation row
+is identical before and after both calls.
+
+A separate real production-DB backup copy was tested against the current
+`/home/xtk/writeups` tree. It preserved all 1,753 research records and every
+SHA3 set for research documents, profiles, chunks, scripts, snapshots, stages,
+aliases, evidence, and validations. It added two genuinely new personal files
+currently absent from production (`Management.md` and `Dump-official.md`), then
+processed zero files on repetition. SQLite integrity remained `ok` with no
+foreign-key violations. The production database itself was not opened for
+writing.

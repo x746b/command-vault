@@ -3,6 +3,7 @@
 import logging
 import time
 import hashlib
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -32,16 +33,39 @@ class Indexer:
 
     def _research_exclusion(self, directory, research_dir=None):
         configured = self.research_dir if research_dir is None else research_dir
+        legacy_root = Path(directory).expanduser().resolve()
+        if configured is None:
+            nested = legacy_root / 'research'
+            if os.path.lexists(nested):
+                if any(component.is_symlink() for component in (nested, *nested.parents)):
+                    raise ValueError('Configured research directory must not contain symlinks')
+                if nested.is_dir():
+                    configured = nested
         if configured is None:
             return None
         research_path = Path(configured).expanduser().absolute()
         if any(component.is_symlink() for component in (research_path, *research_path.parents)):
             raise ValueError('Configured research directory must not contain symlinks')
         research_root = research_path.resolve()
-        legacy_root = Path(directory).expanduser().resolve()
         if research_root == legacy_root:
             raise ValueError('Research directory requires dedicated manifest-driven ingestion, not legacy Markdown indexing')
         return research_root if research_root.is_relative_to(legacy_root) else None
+
+    @staticmethod
+    def _is_managed_research_path(path):
+        """Recognize any file beneath an adapter-owned bundle without reading it."""
+        path = Path(path)
+        return any(os.path.lexists(parent / 'manifest.json')
+                   for parent in (path.parent, *path.parents))
+
+    @classmethod
+    def _contains_managed_research(cls, root):
+        for current, directories, files in os.walk(root, topdown=True, followlinks=False):
+            directories[:] = [name for name in directories
+                              if not (Path(current) / name).is_symlink()]
+            if 'document.md' in files and 'manifest.json' in files:
+                return True
+        return False
 
     def index_directory(
         self,
@@ -83,7 +107,8 @@ class Indexer:
             )
 
         # Find all markdown files
-        md_files = sorted(path.glob("**/*.md"))
+        md_files = [candidate for candidate in sorted(path.glob("**/*.md"))
+                    if not self._is_managed_research_path(candidate)]
         if research_exclusion is not None:
             md_files = [candidate for candidate in md_files
                         if not candidate.resolve().is_relative_to(research_exclusion)]
@@ -156,6 +181,8 @@ class Indexer:
             return self._index_file(filepath, force_rebuild, source_dir)
 
     def _index_file(self, filepath, force_rebuild=False, source_dir=None):
+        if self._is_managed_research_path(filepath):
+            raise ValueError('Managed research files require dedicated manifest-driven ingestion')
         before_hash = hashlib.sha256(Path(filepath).read_bytes()).hexdigest()
         # Parse the file with appropriate settings based on source_dir
         # 'unified' dir enables full content scanning and content-based type detection
@@ -294,7 +321,11 @@ class Indexer:
         for directory in directories.values():
             if not Path(directory).expanduser().is_dir():
                 raise ValueError(f'Source directory not found: {directory}')
-            self._research_exclusion(directory, research_dir)
+            exclusion = self._research_exclusion(directory, research_dir)
+            if force_rebuild and exclusion is None and self._contains_managed_research(
+                Path(directory).expanduser().resolve()
+            ):
+                raise ValueError('Managed research documents require dedicated manifest-driven ingestion')
         if force_rebuild:
             logger.info("Force rebuild requested - resetting database")
             self.db.clear_writeups()
