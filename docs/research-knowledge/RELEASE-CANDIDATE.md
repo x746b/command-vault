@@ -3,6 +3,8 @@
 ## Candidate unit
 
 - Application branch: `feature/research-knowledge-v1`.
+- Compatible application/audit commit:
+  `1ef23e459a21b58d3905aa800c2a68a6948fc945`.
 - Development candidate: `research-phase6-final.db`, 253,992,960 bytes, mode
   `0600`, SHA-256
   `c17c615aa1de5dba711ec8af1f508afea972f009517869e12bcb35ad5c63a166`.
@@ -23,6 +25,21 @@ Machine-readable per-file/DB manifests and local Git/corpus bundles are prepared
 under `/tmp/command-vault-research.j3Xal9/` during Phase 7. They are not durable
 until copied to an approved destination outside the VM revert boundary and
 verified there.
+
+Current local release hashes:
+
+- release manifest:
+  `b95571ee7da3f0ac92020287c3c8c5e9028f4fdf5b136d9969cd870156d906a3`;
+- DB manifest:
+  `d256147e9f609a2ce8164676e1b208048db8a698e496b2f1d60ce1dd7ff83bec`;
+- per-file corpus manifest:
+  `bf38c2f8b45d06629a8a730bac18a25835955125df7fc8544b0ad80eab7a7b2e`;
+- corpus tar:
+  `4b927324b919f964d22120a5b688874f3be21b22b696b2063ced54818905f4b0`.
+
+The local payload and restored extraction were independently audited. Their DB
+and corpus manifests are identical. The release manifest remains
+`pre-promotion` and lists all five pending decisions.
 
 ## Required user decisions
 

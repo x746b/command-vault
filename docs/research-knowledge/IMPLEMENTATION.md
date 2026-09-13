@@ -488,6 +488,18 @@ extraction audited successfully against the rebased DB and reproduced corpus
 manifest SHA-256
 `bf38c2f8b45d06629a8a730bac18a25835955125df7fc8544b0ad80eab7a7b2e`.
 
+The production-path manifest set is bound to compatible application commit
+`1ef23e459a21b58d3905aa800c2a68a6948fc945`. Release manifest SHA-256 is
+`b95571ee7da3f0ac92020287c3c8c5e9028f4fdf5b136d9969cd870156d906a3`;
+DB manifest SHA-256 is
+`d256147e9f609a2ce8164676e1b208048db8a698e496b2f1d60ce1dd7ff83bec`;
+corpus manifest SHA-256 is
+`bf38c2f8b45d06629a8a730bac18a25835955125df7fc8544b0ad80eab7a7b2e`;
+and corpus tar SHA-256 is
+`4b927324b919f964d22120a5b688874f3be21b22b696b2063ced54818905f4b0`.
+The final path-rebase/auditor focused suite passes 22 tests and the full suite
+passes 1,181 tests.
+
 ## Acceptance notes
 
 The implementation plan remains the governing contract. Passing a subagent's

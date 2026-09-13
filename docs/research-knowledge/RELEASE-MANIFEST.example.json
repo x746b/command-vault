@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "status": "pre-promotion",
-  "application_commit": "<40-lowercase-hex>",
+  "application_commit": "1ef23e459a21b58d3905aa800c2a68a6948fc945",
   "application_tag": "<approved-tag>",
   "database": {
     "filename": "vault.db",
