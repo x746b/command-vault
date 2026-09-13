@@ -1,108 +1,107 @@
 # Inspecting the research candidate
 
-The current Phase 5 build is separate from the live database:
+The final data-phase candidate is separate from the live database:
 
 ```text
-/tmp/command-vault-research.j3Xal9/candidate-databases/research-phase5.db
+/tmp/command-vault-research.j3Xal9/candidate-databases/research-phase6-final.db
 ```
 
 Commands below select it for one process only. They do not change shared MCP
 configuration or the production database.
 
-## Reproduce the candidate
+## Reproduce the source collections
 
-Build the three normalized source collections from existing pinned offline
-sources into a new managed fixture:
+Use new create-only destinations under the recorded `/tmp` root. Build the
+ExploitGym kernelCTF and diagnostic collections separately, then assemble their
+direct child bundles beneath one managed `exploitgym` source directory:
 
 ```bash
 uv run python scripts/build_exploitgym_bundles.py \
   --repository /tmp/command-vault-research.j3Xal9/source-clones/exploitgym \
   --revision e4123d043774623b2274e6bbe0155a423d631f0a \
-  --output /tmp/command-vault-research.j3Xal9/<new-managed-fixture>/research/exploitgym
+  --output /tmp/command-vault-research.j3Xal9/<new-staging>/kernelctf
 
-uv run python scripts/build_cybergym_bundles.py \
-  --dataset /tmp/command-vault-research.j3Xal9/downloads/<verified-cybergym-text> \
-  --revision bde190ded494e52bc684b66073b436c9d992c7c6 \
-  --output /tmp/command-vault-research.j3Xal9/<new-managed-fixture>/research/cybergym
+uv run python scripts/build_exploitgym_diagnostics.py \
+  --repository /tmp/command-vault-research.j3Xal9/source-clones/exploitgym \
+  --revision e4123d043774623b2274e6bbe0155a423d631f0a \
+  --output /tmp/command-vault-research.j3Xal9/<new-staging>/diagnostics
+
+mkdir -p /tmp/command-vault-research.j3Xal9/<new-managed>/research/exploitgym
+cp -a /tmp/command-vault-research.j3Xal9/<new-staging>/kernelctf/. \
+  /tmp/command-vault-research.j3Xal9/<new-managed>/research/exploitgym/
+cp -a /tmp/command-vault-research.j3Xal9/<new-staging>/diagnostics/. \
+  /tmp/command-vault-research.j3Xal9/<new-managed>/research/exploitgym/
+```
+
+Rebuild the complete CyberGym collection with 484 stable-ID enrichments, and
+build repository-only ExploitBench metadata:
+
+```bash
+uv run python scripts/enrich_cybergym_bundles.py \
+  --bundles /tmp/command-vault-research.j3Xal9/managed-research-phase5/research/cybergym \
+  --metadata /tmp/command-vault-research.j3Xal9/source-clones/exploitgym \
+  --revision e4123d043774623b2274e6bbe0155a423d631f0a \
+  --output /tmp/command-vault-research.j3Xal9/<new-managed>/research/cybergym
 
 uv run python scripts/build_exploitbench_bundles.py \
   --repository /tmp/command-vault-research.j3Xal9/source-clones/exploitbench \
   --revision 9d0173bcf8835b74a45f60450ae7f184e29e7607 \
-  --output /tmp/command-vault-research.j3Xal9/<new-managed-fixture>/research/exploitbench
+  --output /tmp/command-vault-research.j3Xal9/<new-managed>/research/exploitbench
 ```
 
-The CyberGym downloader remains documented in `CYBERGYM-IMPORT.md`; it selects
-only description/error/patch text and no repository archives. ExploitBench is
-repository-only and emits no scripts.
-
-Create a new candidate without modifying the baseline:
+Build a candidate from the prior accepted candidate to exercise in-place ID
+preservation:
 
 ```bash
 uv run python scripts/build_research_candidate.py \
-  --baseline /tmp/command-vault-research.j3Xal9/baseline/vault-baseline.db \
+  --baseline /tmp/command-vault-research.j3Xal9/candidate-databases/research-phase5.db \
   --candidate /tmp/command-vault-research.j3Xal9/candidate-databases/<new-candidate>.db \
-  --bundles /tmp/command-vault-research.j3Xal9/<new-managed-fixture>/research/exploitgym \
-  --bundles /tmp/command-vault-research.j3Xal9/<new-managed-fixture>/research/cybergym \
-  --bundles /tmp/command-vault-research.j3Xal9/<new-managed-fixture>/research/exploitbench \
-  --managed-root /tmp/command-vault-research.j3Xal9/<new-managed-fixture>/research
+  --managed-root /tmp/command-vault-research.j3Xal9/<new-managed>/research \
+  --bundles /tmp/command-vault-research.j3Xal9/<new-managed>/research/exploitgym \
+  --bundles /tmp/command-vault-research.j3Xal9/<new-managed>/research/cybergym \
+  --bundles /tmp/command-vault-research.j3Xal9/<new-managed>/research/exploitbench
 ```
 
-Destinations are create-only. Use new names for reruns.
-
-## Inspect counts and research
+## Inspect counts and knowledge
 
 ```bash
-VAULT_DB=/tmp/command-vault-research.j3Xal9/candidate-databases/research-phase5.db \
+VAULT_DB=/tmp/command-vault-research.j3Xal9/candidate-databases/research-phase6-final.db \
   uv run vault --json stats
 
-VAULT_DB=/tmp/command-vault-research.j3Xal9/candidate-databases/research-phase5.db \
-  uv run vault --json knowledge "KASAN use-after-free" --type research
+VAULT_DB=/tmp/command-vault-research.j3Xal9/candidate-databases/research-phase6-final.db \
+  uv run vault --json vulnerability kernel:472b20c73fdc
 
-VAULT_DB=/tmp/command-vault-research.j3Xal9/candidate-databases/research-phase5.db \
-  uv run vault --json knowledge "StructuralOptimization ignored side-effects" \
-  --type research --source-name exploitbench
+VAULT_DB=/tmp/command-vault-research.j3Xal9/candidate-databases/research-phase6-final.db \
+  uv run vault --json vulnerability CVE-2019-20503
+
+VAULT_DB=/tmp/command-vault-research.j3Xal9/candidate-databases/research-phase6-final.db \
+  uv run vault --json vulnerability arvo:1461
 ```
 
-The existing stats keys remain backward-compatible. The additive `research`
-section reports sources, domains, vulnerabilities, stages, mitigations,
-evidence, and validations.
+The first profile demonstrates syzbot crash/trace/patch relationships, the
+second a unique nofuzz diagnostic, and the third an existing CyberGym identity
+enriched in place with source metadata and `discussed` mitigation variants.
 
-## Navigate structured profiles
+Search exact non-executed reproducers by language:
 
 ```bash
-VAULT_DB=/tmp/command-vault-research.j3Xal9/candidate-databases/research-phase5.db \
-  uv run vault --json vulnerability CVE-2023-3776 --limit 12
+VAULT_DB=/tmp/command-vault-research.j3Xal9/candidate-databases/research-phase6-final.db \
+  uv run vault --json scripts COMEDI_DEVCONFIG --language syz
 
-VAULT_DB=/tmp/command-vault-research.j3Xal9/candidate-databases/research-phase5.db \
-  uv run vault --json stage "KASLR Bypass" --domain linux-kernel --limit 5
-
-VAULT_DB=/tmp/command-vault-research.j3Xal9/candidate-databases/research-phase5.db \
-  uv run vault --json stage addrof --domain browser-engine
-
-VAULT_DB=/tmp/command-vault-research.j3Xal9/candidate-databases/research-phase5.db \
-  uv run vault --json vulnerability CVE-2024-1939
-
-VAULT_DB=/tmp/command-vault-research.j3Xal9/candidate-databases/research-phase5.db \
-  uv run vault --json vulnerability v8-crbug-1509576
+VAULT_DB=/tmp/command-vault-research.j3Xal9/candidate-databases/research-phase6-final.db \
+  uv run vault --json scripts __NR_io_uring_setup --language c
 ```
 
-ExploitBench profiles contain repository methodology and target metadata only.
-They contain no historical JavaScript, runs, models, seeds, grade/audit results,
-transcripts, or tool calls.
-
-Follow a returned reference with `vault context`. Hash-matching adapter-owned
-documents report `managed`; a missing or changed managed document uses the
-verified database snapshot fallback according to the documented integrity
-policy.
+Follow returned references with `vault context`. Hash-matching adapter-owned
+documents report `managed`; embedded snapshots remain the verified fallback.
 
 ## Candidate-only MCP process
 
 ```bash
-VAULT_DB=/tmp/command-vault-research.j3Xal9/candidate-databases/research-phase5.db \
+VAULT_DB=/tmp/command-vault-research.j3Xal9/candidate-databases/research-phase6-final.db \
 VAULT_READONLY=1 \
   uv run command-vault
 ```
 
-Use `vault_stats`, `search_knowledge(writeup_type="research")`, profiles, and
-`read_context(reference)`. Do not replace the shared MCP configuration during
-candidate review.
+Use `vault_stats`, research searches, profiles, script retrieval, and
+`read_context`. Do not replace shared MCP configuration during review.

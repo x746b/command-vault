@@ -415,6 +415,45 @@ class, sanitizer, and architecture values had zero overwrites. Enrichment filled
 1,936 mitigation links. The enriched bundle tree SHA-256 is
 `2f35043e52ce369a236f59ddaca8050c4a523dbd6860582ba30986a90c0ede67`.
 
+Final data-phase candidate
+`/tmp/command-vault-research.j3Xal9/candidate-databases/research-phase6-final.db`
+has SHA-256
+`c17c615aa1de5dba711ec8af1f508afea972f009517869e12bcb35ad5c63a166`,
+mode `0600`, and size 253,992,960 bytes. It has integrity `ok`, no foreign-key
+violations, and no duplicate source/external identities. Counts are 1,753
+research documents, 1,752 vulnerability profiles, 32,034 imported research
+chunks, 345 research scripts (186 C and 159 syz), 28 operational stages,
+30,296 evidence links, 2,035 vulnerability-mitigation links, 13 global
+mitigations, and three source collections. Per-source document totals are
+CyberGym 1,507, ExploitGym 204, and ExploitBench 42.
+
+All 1,576 pre-Phase-6 writeup IDs are preserved. A second complete import from
+the Phase 6 candidate preserves all 1,753 IDs and every count, demonstrating
+idempotent reindexing without duplicate documents/profiles. All 1,753 managed
+documents match both their indexed content hashes and embedded snapshots. All
+318 new C/syz scripts match their managed artifact bytes, source-anchor hashes,
+stored hashes, and `harness_observed` validation; none claims
+`reproduced_local`.
+
+The final managed corpus has 8,944 files totaling 149,256,948 bytes with tree
+SHA-256
+`2285567dc5d140a4f0c3ef04e67b16a3ded7518e628573d5f08d31908b690c75`.
+Exact syzbot, nofuzz, enriched CyberGym, C reproducer, syz reproducer, class,
+sanitizer, and mitigation queries work with `managed` context. No V8, nofuzz
+PoC, Makefile, image, or binary path is present in the ExploitGym collection.
+
+Between Phase 5 and Phase 6, two of sixteen unrelated top-five pages changed
+only in ordering/content from the existing personal corpus; no new diagnostic
+record entered those pages. The 24-query excerpt rubric remains 20/24. Warm
+median search latency changed from 47.925 to 47.445 ms and p95 from 140.738 to
+137.963 ms. The pre-existing p95 acceptance-target exceedance remains a Phase 7
+review item, but Phase 6 introduced no latency or support regression.
+
+The final integrated suite passes 1,159 tests. The live database SHA-256 remains
+`9e30b166c718941207b4d774fe7293bb90ff0086e626e6b8dddd763b628b0195`;
+no production path, configuration, service, database, or Git remote was
+changed.
+
 ## Acceptance notes
 
 The implementation plan remains the governing contract. Passing a subagent's
