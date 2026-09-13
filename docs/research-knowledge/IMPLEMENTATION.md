@@ -461,6 +461,7 @@ changed.
 | Task | Model | Objective | Owned files | Forbidden actions | Tests/status |
 |---|---|---|---|---|---|
 | release manifest auditor | `gpt-5.6-terra` | Read-only DB/corpus verification and create-only per-file manifests | audit script and focused tests | archive/promotion/cleanup/network/external writes/DB mutation/delegation | complete; 13 focused and 1,172 full before integration |
+| release path rebase/restore verification | `gpt-daybreak-blue-latest` | Create future-path DB copy and audit it against staging/extracted corpus | rebase script/tests and release auditor/tests | no live path/config/service/external write | complete; candidate-only restore test passed |
 
 Daybreak completed the operator, security, license, provenance, Git, and p95
 reviews recorded in `EVALUATION.md` and `SECURITY.md`. Promotion, restoration,
@@ -474,6 +475,18 @@ stray-file rejection test, and reran the full suite: 14 focused release-audit
 tests and 1,173 total tests pass. The real audit then verified 8,944 files and
 1,753 research documents in 2.2 seconds and published only restrictive
 `0700`/`0600` local manifest output.
+
+Restore-path review found that the development candidate correctly referenced
+its `/tmp` managed corpus and therefore was not itself the final promotion DB.
+Daybreak added a create-only candidate path rebase and future-install-root audit
+mode. A release copy rebased all 1,753 paths to
+`/home/xtk/writeups/research`, retained size 253,992,960 bytes, passed integrity
+and foreign keys, and has SHA-256
+`5d43797d22f45faeb7949e18dfe4ac28a3cc52a141c605ac3ffc1e2b8637fd2e`.
+The corpus tar contains 8,944 regular files and no unsafe/link members. A fresh
+extraction audited successfully against the rebased DB and reproduced corpus
+manifest SHA-256
+`bf38c2f8b45d06629a8a730bac18a25835955125df7fc8544b0ad80eab7a7b2e`.
 
 ## Acceptance notes
 

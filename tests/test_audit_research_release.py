@@ -102,6 +102,21 @@ def test_success_is_deterministic_create_only_and_content_free(audit_module, can
     assert json.loads(stdout)['release_manifest_sha256']
 
 
+def test_future_install_root_maps_database_paths_to_staging_corpus(audit_module, candidate, tmp_path):
+    future = tmp_path / 'future-install' / 'research'
+    with sqlite3.connect(candidate['db']) as connection:
+        connection.execute(
+            "UPDATE writeups SET filepath=? WHERE writeup_type='research'",
+            (str(future / 'fixture-source/fixture/document.md'),),
+        )
+    output = tmp_path / 'future-release'
+    _audit(audit_module, candidate, output, install_root=future)
+    manifest = json.loads((output / 'DB-MANIFEST.json').read_text())
+    assert manifest['managed_install_root'] == str(future)
+    with pytest.raises(ValueError, match='install root'):
+        _audit(audit_module, candidate, tmp_path / 'wrong-root')
+
+
 @pytest.mark.parametrize('fault', ['hash', 'snapshot', 'foreign_key', 'duplicate', 'orphan', 'script', 'mode', 'schema'])
 def test_database_validation_failures_publish_nothing(audit_module, candidate, tmp_path, fault):
     if fault == 'hash':

@@ -75,6 +75,16 @@ def _directory_input(path: str | Path, label: str) -> Path:
     return result
 
 
+def _install_root(path: str | Path) -> Path:
+    result = _absolute(path)
+    if result == Path(result.anchor) or any(
+        part in ('', '.', '..') or '\\' in part or any(ord(char) < 32 or ord(char) == 127 for char in part)
+        for part in result.parts[1:]
+    ):
+        _fail('Managed install root must be a safe non-root absolute path')
+    return result
+
+
 def _safe_relative(path: Path) -> str:
     parts = path.parts
     if (not parts or path.is_absolute() or any(
@@ -193,7 +203,8 @@ def _query_count(connection: sqlite3.Connection, sql: str, values: tuple = ()) -
     return int(connection.execute(sql, values).fetchone()[0])
 
 
-def _database_audit(connection: sqlite3.Connection, root: Path, files: dict[str, dict[str, Any]], *,
+def _database_audit(connection: sqlite3.Connection, root: Path, install_root: Path,
+                    files: dict[str, dict[str, Any]], *,
                     max_snapshot_bytes: int, max_file_bytes: int, max_total_bytes: int) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
     connection.row_factory = sqlite3.Row
     if connection.execute('PRAGMA user_version').fetchone()[0] != 2:
@@ -225,10 +236,13 @@ def _database_audit(connection: sqlite3.Connection, root: Path, files: dict[str,
         if not stored.is_absolute():
             _fail('Research document path is not a managed absolute path')
         try:
-            resolved = stored.resolve(strict=True)
-            relative = resolved.relative_to(root)
+            relative = stored.relative_to(install_root)
+            resolved = (root / relative).resolve(strict=True)
+            resolved.relative_to(root)
         except (OSError, ValueError):
-            _fail('Research document is not a real managed descendant')
+            _fail('Research document is not mapped to the managed install root')
+        if stored != install_root / relative:
+            _fail('Research document path is not canonically mapped')
         reltext = _safe_relative(relative)
         if resolved.name != 'document.md' or reltext not in files:
             _fail('Research document is absent from the managed corpus')
@@ -341,7 +355,8 @@ def _database_audit(connection: sqlite3.Connection, root: Path, files: dict[str,
 
 
 def audit_research_release(database: str | Path, research_root: str | Path, output: str | Path, *, application_commit: str,
-                           baseline_sha256: str, sources_lock: str | Path, generated_at: str | None = None,
+                           baseline_sha256: str, sources_lock: str | Path,
+                           install_root: str | Path | None = None, generated_at: str | None = None,
                            max_files: int = DEFAULT_MAX_FILES, max_file_bytes: int = DEFAULT_MAX_FILE_BYTES,
                            max_total_bytes: int = DEFAULT_MAX_TOTAL_BYTES, max_snapshot_bytes: int = DEFAULT_MAX_SNAPSHOT_BYTES) -> dict[str, Any]:
     if not isinstance(application_commit, str) or not __import__('re').fullmatch(r'[0-9a-f]{40}', application_commit):
@@ -355,6 +370,7 @@ def audit_research_release(database: str | Path, research_root: str | Path, outp
     if stat.S_IMODE(os.stat(db_path, follow_symlinks=False).st_mode) != 0o600:
         _fail('Candidate database mode must be exactly 0600')
     root = _directory_input(research_root, 'Research root')
+    managed_install_root = _install_root(install_root if install_root is not None else root)
     lock_path = _regular_input(sources_lock, 'Sources lock')
     output_path = _absolute(output)
     parent = _directory_input(output_path.parent, 'Output parent')
@@ -372,7 +388,8 @@ def audit_research_release(database: str | Path, research_root: str | Path, outp
     try:
         connection = sqlite3.connect(db_path.as_uri() + '?mode=ro', uri=True)
         connection.execute('PRAGMA query_only=ON')
-        aggregates, bundles = _database_audit(connection, root, files, max_snapshot_bytes=max_snapshot_bytes,
+        aggregates, bundles = _database_audit(connection, root, managed_install_root, files,
+                                               max_snapshot_bytes=max_snapshot_bytes,
                                                max_file_bytes=max_file_bytes, max_total_bytes=max_total_bytes)
     except sqlite3.Error:
         _fail('Candidate database cannot be audited read-only')
@@ -394,6 +411,7 @@ def audit_research_release(database: str | Path, research_root: str | Path, outp
             })
         corpus_files.append(item)
     db_manifest = {'schema_version': 1, 'database': {'path': db_path.name, 'size': database_before[1], 'sha256': database_before[0], 'mode': '0600'},
+                   'managed_install_root': str(managed_install_root),
                    'schema': 2, 'baseline_sha256': baseline_sha256, 'application_commit': application_commit, **aggregates}
     corpus_manifest = {'schema_version': 1, 'files': corpus_files, 'file_count': len(corpus_files),
                        'total_bytes': sum(item['size'] for item in corpus_files)}
@@ -456,6 +474,7 @@ def main(argv=None):
     parser.add_argument('--application-commit', required=True)
     parser.add_argument('--baseline-sha256', required=True)
     parser.add_argument('--sources-lock', type=Path, required=True)
+    parser.add_argument('--install-root', type=Path)
     parser.add_argument('--generated-at')
     args = parser.parse_args(argv)
     try:

@@ -6,7 +6,7 @@
   "database": {
     "filename": "vault.db",
     "bytes": 253992960,
-    "sha256": "c17c615aa1de5dba711ec8af1f508afea972f009517869e12bcb35ad5c63a166",
+    "sha256": "5d43797d22f45faeb7949e18dfe4ac28a3cc52a141c605ac3ffc1e2b8637fd2e",
     "mode": "0600",
     "schema_version": 2
   },
@@ -14,7 +14,7 @@
     "files": 8944,
     "bytes": 149256948,
     "tree_sha256": "2285567dc5d140a4f0c3ef04e67b16a3ded7518e628573d5f08d31908b690c75",
-    "per_file_manifest_sha256": "<generated-release-manifest-sha256>"
+    "per_file_manifest_sha256": "bf38c2f8b45d06629a8a730bac18a25835955125df7fc8544b0ad80eab7a7b2e"
   },
   "pending_decisions": {
     "external_vm_snapshot_identifier": null,

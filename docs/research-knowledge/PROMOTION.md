@@ -19,8 +19,9 @@ Create a fresh consistent live backup with SQLite's backup command and verify
 its hash, mode, integrity, and foreign keys. Copy that backup to the protected
 external destination before continuing.
 
-Stage the approved candidate on the live database filesystem without replacing
-the live path:
+Stage the approved path-rebased promotion DB on the live database filesystem
+without replacing the live path. Do not use the development candidate with
+`/tmp` managed paths:
 
 ```bash
 install -m 0600 <release-dir>/vault.db \
