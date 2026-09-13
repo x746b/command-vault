@@ -389,7 +389,7 @@ External IDs and document identities must remain stable.
 | Task | Model | Objective | Owned files | Forbidden actions | Tests/status |
 |---|---|---|---|---|---|
 | syzbot/nofuzz diagnostics | `gpt-5.6-terra` | Emit 177 diagnostic bundles; syzbot C/syz only are non-executed scripts | dedicated adapter/wrapper/tests | V8, nofuzz PoC, Makefile/binary/image, execution, network, DB/production, delegation | complete; 11 focused and 1,120 full before Daybreak integration |
-| CyberGym enrichment | `gpt-5.6-terra` | Rebuild 1,507 bundles, enriching exactly 484 stable identities | dedicated enricher/wrapper/tests | duplicate identities, overwrites, source-field replacement, execution/network/DB/production, delegation | pending assignment |
+| CyberGym enrichment | `gpt-5.6-terra` | Rebuild 1,507 bundles, enriching exactly 484 stable identities | dedicated enricher/wrapper/tests | duplicate identities, overwrites, source-field replacement, execution/network/DB/production, delegation | complete; 35 focused and 1,159 full before integration review |
 | syz retrieval allowlist | `gpt-daybreak-blue-latest` | Extend explicit research script indexing from C to C+syz | `research_indexer.py`, focused indexer test | no execution, no arbitrary language import, no schema/live DB changes | complete; 59 focused tests |
 
 Daybreak real-source review corrected nofuzz field locations, lowercase
@@ -405,6 +405,15 @@ Cross-source integration aligned the existing kernel/CyberGym stage
 descriptions and deterministic aliases while retaining per-record validation;
 the diagnostics-only candidate reached integrity `ok` with no foreign-key or
 stage conflicts.
+
+Real CyberGym enrichment preserved all 1,507 external/source/document
+identities and every artifact byte. Exactly 484 bundles gained provenance
+metadata and four `discussed` mitigation variants; the other 1,023 remain
+semantically and byte-content unchanged. Existing non-null vulnerability
+class, sanitizer, and architecture values had zero overwrites. Enrichment filled
+54 null classes, three null sanitizers, and 442 null architectures, producing
+1,936 mitigation links. The enriched bundle tree SHA-256 is
+`2f35043e52ce369a236f59ddaca8050c4a523dbd6860582ba30986a90c0ede67`.
 
 ## Acceptance notes
 
