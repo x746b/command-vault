@@ -41,7 +41,7 @@ in an activated, pip-enabled virtual environment:
 python -m pip install "command-vault-mcp==0.9.1"
 ```
 
-PyPI and GitHub releases are published separately. Git release `v1.0.0` contains the research
+PyPI and GitHub releases are published separately. Git release `v1.0.1` contains the research
 knowledge extension; PyPI remains at `0.9.1` until a separate package publication. Pin the source
 tag or package version when you need reproducible installation.
 

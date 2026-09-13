@@ -1,61 +1,44 @@
-# Research release evaluation
+# Research knowledge evaluation
 
-Date: 2026-09-13
+Evaluation checks retrieval quality, provenance, compatibility, and operator
+usability. It is not an LLM benchmark, and imported artifacts are never executed
+as part of the test suite.
 
-Candidate: `/tmp/command-vault-research.j3Xal9/candidate-databases/research-phase6-final.db`
+## Acceptance checks
 
-This is an operator-usability and regression review, not an LLM benchmark.
-Nothing retrieved during evaluation was executed.
+A candidate database should pass all of the following before it replaces an
+existing database:
 
-## Results
+- `PRAGMA integrity_check` returns `ok` and `PRAGMA foreign_key_check` returns
+  no rows.
+- A repeated import is idempotent and preserves stable document, vulnerability,
+  chunk, script, and evidence identifiers where identity is unambiguous.
+- Exact CVE and external-task lookups resolve the intended vulnerability
+  profile; invalid identifiers return clean empty results.
+- Source, domain, project, vulnerability class, sanitizer, mitigation,
+  operational-stage, language, and validation-status filters compose correctly.
+- Canonical stage names and documented aliases resolve identically, including
+  `trigger`, `reproducer`, and `syzlang` as the public alias for stored `syz`.
+- Full-context reads prefer a hash-matching managed document and fall back to
+  the verified embedded snapshot if that managed file is unavailable.
+- Script pagination produces a stable continuation without duplicates or gaps.
+- Legacy writeup, command, script, history, and context workflows retain their
+  pre-migration results.
+- Negative controls do not broaden into unrelated research results.
 
-The integrated unit/regression suite passes 1,159 tests. SQLite reports
-`integrity_check=ok` and no foreign-key violations. A second complete import
-preserves all 1,753 research writeup IDs and counts.
+## Retrieval rubric
 
-Twelve sampled legacy command workflows returned useful evidence within five
-results: nmap service enumeration, ffuf content discovery, BloodHound/AD
-collection, Certipy/ADCS enumeration, Kerbrute user enumeration,
-secretsdump-based Windows credential extraction, Linux and Windows privilege
-escalation enumeration, MSSQL `xp_cmdshell`, sqlmap, John password cracking,
-and Volatility process analysis.
+Use a fixed, versioned query set spanning diagnosis, trigger evidence,
+mitigations, primitives, remediation, and exact identifiers. For each query,
+record whether the expected source, section, artifact, and evidence reference
+appear within a fixed result depth. Track median and p95 latency on the same
+hardware, but treat a change from the previous candidate as more informative
+than a universal millisecond threshold.
 
-Research acceptance checks passed for:
+## Safety checks
 
-- ExploitBench `addrof` alias and exact V8 target/CVE profiles;
-- kernelCTF CVE and mitigation profiles;
-- syzbot external task, sanitizer/class/function, trace, C, syz, and patch
-  retrieval;
-- unique nofuzz CVE/GHSA diagnostics;
-- CyberGym exact task profiles enriched without changing external identity;
-- `discussed` canary/PIE/RELRO/hardened variant metadata;
-- managed full-context reads and embedded snapshot verification;
-- unsupported required-term negative controls.
-
-The existing 24-query excerpt rubric remains 20/24 between Phase 5 and Phase 6.
-Two of sixteen unrelated top-five result pages changed only among existing
-personal results; no new diagnostic record entered them. This is the intended
-effect of diagnostic-default scope.
-
-## Latency disposition
-
-Warm local measurements over 80 searches:
-
-| Candidate | Median | p95 | Maximum |
-|---|---:|---:|---:|
-| Phase 5 | 47.925 ms | 140.738 ms | 141.373 ms |
-| Phase 6 | 47.445 ms | 137.963 ms | 139.469 ms |
-
-The aspirational absolute p95 target of 100 ms is not met. The plan's alternate
-gate permits promotion after investigation. Investigation found no Phase 6
-latency regression, no support loss, and no diagnostic-source leakage into
-unrelated pages; p95 improved slightly. The exception is therefore acceptable
-for a release candidate, but must be explicitly included in the user's final
-promotion review. Further query-plan/FTS optimization is post-release work, not
-a reason to discard the accepted corpus.
-
-## Promotion acceptance
-
-Pre-promotion evidence is complete. Production promotion remains blocked on the
-external snapshot/durable-storage decisions and explicit push/promotion
-approval listed in `RELEASE-CANDIDATE.md`.
+Audit the generated corpus for symlinks, nonregular files, path traversal,
+unexpected binaries, secret-shaped values, and untracked source types. Verify
+every declared size and digest, confirm that no imported artifact was executed,
+and retain unknown licenses as null. Database or corpus hashes belong in private
+release manifests, not public documentation.

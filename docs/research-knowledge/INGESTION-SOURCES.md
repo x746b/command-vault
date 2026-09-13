@@ -1,6 +1,6 @@
 # Reusable knowledge ingestion assessment
 
-Date: 2026-09-12. No live command-vault changes were made.
+The source lock records the revisions used by the deterministic adapters.
 
 ## Source snapshots
 
@@ -71,7 +71,8 @@ database. The pinned revision remains in the source lock only to make that
 exclusion auditable and prevent accidental later scope expansion.
 
 The code repository is MIT licensed, with some V8-derived files carrying
-BSD-style notices. Phase 5 uses repository methodology and target metadata only.
+BSD-style notices. The adapter uses repository methodology and target metadata
+only.
 
 ## Unified command-vault adapter
 
@@ -91,7 +92,7 @@ Use three adapters feeding one normalized intermediate record format:
 - `ingest_cybergym`: `tasks.json`, downloaded text artifacts and patches.
 - `ingest_exploitbench`: repository capability definitions, methodology, and metadata-only V8 targets; no code artifacts or run dataset.
 
-## Suggested implementation sequence
+## Implemented import order
 
 1. Add the research-source schema and normalized capability ontology.
 2. Import ExploitBench's capability definitions and grader semantics.
@@ -103,6 +104,6 @@ Use three adapters feeding one normalized intermediate record format:
    ExploitGym V8 tasks and exploit code.
 7. Evaluate with pentest-style questions spanning vulnerability diagnosis, exploit primitives, mitigation effects and remediation.
 
-This order gives the vault a stable ontology first, detailed technique
+This order gave the vault a stable ontology first, detailed technique
 narratives second, broad vulnerable/crash/fix evidence third, and compact
 repository-sourced target context without importing historical model traces.

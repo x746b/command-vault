@@ -1,6 +1,7 @@
 # CyberGym, ExploitGym, and ExploitBench assessment
 
-Research snapshot: 2026-09-12. Repositories were cloned into this directory; no command-vault data was changed.
+This comparison explains the reusable testing ideas and a safe way to inspect
+each upstream framework.
 
 ## Functional comparison
 
@@ -19,12 +20,17 @@ metadata. The license-null run dataset is excluded from normalized bundles,
 managed research, and the database; no historical JavaScript, runs, models,
 seeds, grade/audit events, transcripts, or tool calls are imported.
 
-## Local verification
+## Suggested smoke checks
 
-- CyberGym installed under Python 3.12; server and task-generator help commands succeeded.
-- ExploitGym installed with `uv`; 62 selected controller, token, type, secret, and statistics tests passed. Runtime validation correctly reported seven absent static artifacts (GDB, netcat, Node, three agent CLIs, and socat).
-- ExploitBench installed with `uv`; 643 non-slow unit/golden tests passed, six skipped, six slow deselected. The documented dev-only install initially produced four publishing-test failures because `pyarrow`/`zstandard` are in the optional `publish` extra; installing `.[dev,publish]` made the suite pass.
-- Docker CLI is present, but the current account cannot access `/var/run/docker.sock`. Only 14.5 GB was free, so no vulnerable images were pulled and no host ASLR setting was changed.
+- For CyberGym, verify the server and task-generator help commands before
+  downloading task data.
+- For ExploitGym, run its controller, token, type, secret, and statistics tests,
+  then use the supplied validation script to inventory missing host tools.
+- For ExploitBench, install both `dev` and `publish` extras before running the
+  non-slow unit/golden suite; the publish tests require `pyarrow` and
+  `zstandard`.
+- Before pulling vulnerable images, verify Docker access, disk capacity, and
+  whether the selected profile changes host-wide settings such as ASLR.
 
 ## Safe installation recipes
 

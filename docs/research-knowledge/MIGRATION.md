@@ -22,9 +22,9 @@ download, research import, or production promotion.
 ## Candidate procedure
 
 1. Create a consistent SQLite backup of the live database.
-2. Verify `integrity_check`, `foreign_key_check`, size, mode, and SHA-256.
-3. Copy the verified backup to a new candidate path under the recorded project
-   root.
+2. Verify `integrity_check`, `foreign_key_check`, size, mode, and a privately
+   recorded digest.
+3. Copy the verified backup to a new, operator-controlled candidate path.
 4. Open only the candidate with the schema-v2 application in writable mode.
 5. Re-run integrity and foreign-key checks.
 6. Compare all legacy table counts and stable IDs with the verified backup.
@@ -43,6 +43,7 @@ matching old application commit and verified old database backup. Rollback means
 restoring that pair atomically after disconnecting only command-vault clients.
 Never run an old writable application against schema v2.
 
-Production installation is governed by `PROMOTION.md`; post-revert recovery by
-`RESTORE.md`; and compatible-pair recovery by `ROLLBACK.md`. None of those
-procedures is authorized merely by completing a candidate migration.
+Completing a candidate migration does not authorize replacing a live database.
+Operators should document their own backup location, client-disconnection,
+atomic-replacement, verification, and recovery procedure without publishing
+database paths or digests.

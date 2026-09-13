@@ -103,10 +103,9 @@ writeup-derived content before importing configured sources and requires the
 separately validated candidate/migration workflow. Incremental `--add` keeps
 history and managed research isolated.
 
-## Production regression verification
+## Regression contract
 
-The canonical one-liner was tested with managed research present. It added only
-two genuinely new personal writeups, preserved every research document,
-snapshot, vulnerability, chunk, script, evidence link, and identifier, and
-processed zero files on immediate repetition. The behavior is covered by
-candidate and CLI regression tests.
+Automated CLI tests cover the canonical one-liner with managed research present.
+They verify that only new or changed personal writeups are processed, research
+documents and relations are preserved, and an immediate repeat processes zero
+files.

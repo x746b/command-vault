@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.0.1 — 2026-09-13
+
+### Changed
+
+- Reduced the public research-knowledge documentation to reusable architecture,
+  source-selection, import, evaluation, migration, indexing, and security
+  guidance.
+- Removed private implementation diaries, host-specific promotion and restore
+  records, temporary paths, database/corpus hashes, and model-orchestration
+  notes from the public documentation tree.
+- Simplified the public source lock to upstream revisions, source-file integrity
+  values, and explicit import/exclusion scope.
+
 ## 1.0.0 — 2026-09-13
 
 ### Added

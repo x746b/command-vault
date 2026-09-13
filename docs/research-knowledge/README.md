@@ -1,19 +1,34 @@
 # Research knowledge extension
 
-This directory contains the design and research material for extending command-vault with source-backed vulnerability, exploit-development, mitigation, and validation knowledge for authorized pentesting, CTF, and lab use.
+Command-vault can retain source-backed vulnerability, diagnostic, mitigation,
+and exploit-development knowledge for authorized pentesting, CTF, and lab use.
+This directory documents the reusable design and deliberately narrow import
+scope. It does not contain private database manifests, host-specific deployment
+records, model transcripts, or operator environment notes.
 
-## Documents
+## Documentation
 
-- [`IMPLEMENTATION-PLAN-RESEARCH-KNOWLEDGE.md`](IMPLEMENTATION-PLAN-RESEARCH-KNOWLEDGE.md) — product objective, proposed architecture and schema, ingestion adapters, retrieval changes, model orchestration, delivery phases, VM lifecycle, preservation, cleanup, and restoration.
-- [`FRAMEWORK-ASSESSMENT.md`](FRAMEWORK-ASSESSMENT.md) — functional comparison, installation/testing findings, and reusable methodology from CyberGym, ExploitGym, and ExploitBench.
-- [`INGESTION-SOURCES.md`](INGESTION-SOURCES.md) — inspected source revisions, corpus inventories, parsability findings, selective-download strategy, and normalized ingestion recommendations.
-- [`PROMOTION-RESULTS-20260913.md`](PROMOTION-RESULTS-20260913.md) — production database/corpus promotion, backups, hashes, configuration changes, validation results, and remaining preservation work.
-- [`PRE-V1-POLISH-20260913.md`](PRE-V1-POLISH-20260913.md) — approved candidate-only usability corrections, deterministic enrichment counts, stable-ID audit, and final promotion checkpoint.
-- [`SAFE-INDEXING.md`](SAFE-INDEXING.md) — tested one-line personal-writeup indexing, idempotency checks, backups, managed-research exclusion, and rebuild warnings.
-- [`EXPLOITBENCH-IMPORT.md`](EXPLOITBENCH-IMPORT.md) — repository-only V8 methodology/target metadata and excluded run-dataset contract.
-- [`EXPLOITGYM-DIAGNOSTICS.md`](EXPLOITGYM-DIAGNOSTICS.md) — syzbot/nofuzz diagnostic-only selection and identity-preserving CyberGym enrichment contract.
-- [`EVALUATION.md`](EVALUATION.md), [`SECURITY.md`](SECURITY.md), [`PROMOTION.md`](PROMOTION.md), [`RESTORE.md`](RESTORE.md), [`ROLLBACK.md`](ROLLBACK.md), and [`RELEASE-CANDIDATE.md`](RELEASE-CANDIDATE.md) — Phase 7 acceptance, retention, promotion, restoration, and approval gates.
+- [`ARCHITECTURE.md`](ARCHITECTURE.md) — trust boundary, normalized bundles,
+  managed-file routing, schema, and compatibility.
+- [`FRAMEWORK-ASSESSMENT.md`](FRAMEWORK-ASSESSMENT.md) — what CyberGym,
+  ExploitGym, and ExploitBench contribute and how to test them safely.
+- [`INGESTION-SOURCES.md`](INGESTION-SOURCES.md) — selected upstream material,
+  exclusions, and normalized record shape.
+- [`CYBERGYM-IMPORT.md`](CYBERGYM-IMPORT.md) — selective description, crash,
+  and patch ingestion.
+- [`EXPLOITGYM-PILOT.md`](EXPLOITGYM-PILOT.md) and
+  [`EXPLOITGYM-DIAGNOSTICS.md`](EXPLOITGYM-DIAGNOSTICS.md) — kernelCTF,
+  syzbot, nofuzz, and CyberGym-enrichment contracts.
+- [`EXPLOITBENCH-IMPORT.md`](EXPLOITBENCH-IMPORT.md) — methodology and
+  metadata-only V8 target ingestion.
+- [`EVALUATION.md`](EVALUATION.md) — release-independent acceptance checks.
+- [`MIGRATION.md`](MIGRATION.md) — safe schema migration and rollback model.
+- [`SAFE-INDEXING.md`](SAFE-INDEXING.md) — supported incremental personal
+  writeup workflow.
+- [`SECURITY.md`](SECURITY.md) — source trust, licensing, and publication rules.
+- [`SOURCES.lock.json`](SOURCES.lock.json) — public upstream revisions and
+  import/exclusion scope.
 
-These documents include the governing plan, source contracts, and living
-implementation record. Development artifacts remain candidate-only; they do
-not indicate that a production database migration or promotion has occurred.
+Normalized framework documents and their database are intentionally not stored
+in Git. Users acquire source material under its original terms, generate bundles
+with the adapters, and keep personal or license-unknown corpora private.

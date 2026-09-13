@@ -20,8 +20,10 @@ sqlite3 "file:$backup_db?mode=ro" \
 ```
 
 The normal MCP server opens the database read-only and does not perform
-migrations. Build and inspect a separate candidate using the documented
-candidate workflow before replacing production.
+migrations. Build and inspect a separate candidate using the
+[`migration`](docs/research-knowledge/MIGRATION.md) and
+[`evaluation`](docs/research-knowledge/EVALUATION.md) guidance before replacing
+an existing database.
 
 ## Managed research
 
@@ -68,11 +70,10 @@ Before promotion, require:
 4. Legacy and research retrieval regression checks.
 5. A fresh production backup and explicit promotion approval.
 
-Detailed runbooks:
+Reusable guidance:
 
-- [`PROMOTION.md`](docs/research-knowledge/PROMOTION.md)
-- [`RESTORE.md`](docs/research-knowledge/RESTORE.md)
-- [`ROLLBACK.md`](docs/research-knowledge/ROLLBACK.md)
+- [`MIGRATION.md`](docs/research-knowledge/MIGRATION.md)
+- [`EVALUATION.md`](docs/research-knowledge/EVALUATION.md)
 - [`SECURITY.md`](docs/research-knowledge/SECURITY.md)
 
 ## Rollback

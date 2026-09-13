@@ -22,12 +22,12 @@ Command-vault intentionally uses three authority modes:
 - Personal material beneath `~/writeups` remains file-authoritative and
   path-backed. Freshness compares the current file with its indexed revision.
 - Imported framework research is adapter-owned under
-  `/home/xtk/writeups/research/{exploitgym,cybergym,exploitbench}`. A
+  `$WRITEUPS_RESEARCH/{exploitgym,cybergym,exploitbench}`. A
   hash-matching managed document is the primary full-document source; the
   embedded database snapshot is its verified fallback. Upstream checkouts and
   `/tmp` staging can be removed after preservation gates pass.
-- Project architecture, migration, source-lock, security, inspection, restore,
-  and rollback documentation is Git-authoritative in
+- Project architecture, migration, source-lock, security, and import
+  documentation is Git-authoritative in
   `docs/research-knowledge/`.
 
 These modes must not be silently substituted. A missing personal file reports
@@ -37,9 +37,9 @@ changes follow normal Git review.
 
 ### Managed routing and duplicate prevention
 
-`WRITEUPS_RESEARCH=/home/xtk/writeups/research` identifies the managed bundle
+`WRITEUPS_RESEARCH="$WRITEUPS/research"` identifies the managed bundle
 root. Dedicated manifest-driven research ingestion walks its source children.
-If the general `WRITEUPS=/home/xtk/writeups` root contains that tree, the legacy
+If the general `WRITEUPS="$HOME/writeups"` root contains that tree, the legacy
 Markdown scanner excludes the resolved managed subtree before recursive
 discovery. This prevents the same generated `document.md` from being indexed a
 second time and misclassified as a box/challenge/Sherlock writeup.
@@ -127,7 +127,7 @@ stable navigation IDs. Ambiguous old children are never guessed or reused.
 
 ## Compatibility
 
-- Normal read-side clients may filter for `research` after Phase 1.
+- Schema-v2 read-side clients may filter for `research`.
 - The legacy Markdown indexer remains limited to box, challenge, and Sherlock
   sources. It cannot relabel arbitrary Markdown as research.
 - A read-only application connection never migrates a database.

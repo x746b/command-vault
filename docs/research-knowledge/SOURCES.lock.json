@@ -20,11 +20,8 @@
       "selected_text_objects": 4521,
       "selected_text_bytes": 89741551,
       "excluded_globs": ["data/*/*/repo-vul.tar.gz", "data/*/*/repo-fix.tar.gz"],
-      "acquisition_status": "4,521 selected text objects downloaded and verified; repository archives excluded",
-      "acquisition_manifest_sha256": "b67c1c150aebc4294e6ce2857746fe15cb2cf7df42c9b74c909bcf749b3553a1",
       "tasks_json_sha256": "9cea452cc1e1a3703e0f60c2dfc8642430aab9f50433f976581509de58c7048f",
-      "sanitized_fixture": "tests/fixtures/research/cybergym-task.json",
-      "sanitized_fixture_sha256": "e6d112310ad58a7315db970eeb2e12cc8df76f9942acb051cb7ddc6b84455c39"
+      "import_status": "selected text objects only"
     },
     {
       "name": "exploitgym",
@@ -36,7 +33,7 @@
       "userspace_metadata_sha256": "0db33007969af8829e04fc8d6628fdb72fdae40d8a6cecad639f7ccd0c76ff8d",
       "kernel_metadata_sha256": "4a4d48eb790373e2190cfcc5a0d13086bce0f3f8c29efe5e843267a29b86f557",
       "v8_metadata_sha256": "f674fa4083c9eb2e90fe720d166b8e05ea2a968f7bbd5aaa66197cb9840923ac",
-      "phase6_selected": {
+      "selected": {
         "syzbot_records": 159,
         "syzbot_descriptions": 159,
         "syzbot_traces": 159,
@@ -49,14 +46,12 @@
         "nofuzz_selected_bytes": 286627,
         "cybergym_enrichment_records": 484
       },
-      "phase6_excluded": {
+      "excluded": {
         "syzbot_makefiles": 159,
         "nofuzz_poc": 18,
         "v8_records": 181,
         "exploit_code": true
-      },
-      "sanitized_fixture": "tests/fixtures/research/exploitgym-kernelctf-task.json",
-      "sanitized_fixture_sha256": "4e916bd58d4a7e2fef5fcf87398ac25f682df6dc1eaa55514d30890c5e39e76a"
+      }
     },
     {
       "name": "exploitbench",
@@ -68,9 +63,7 @@
       "target_metadata_sha256": "39d46155495675f2ac8d5ee61c18dbe9c5841e8c8dcc8b63e4cf7487a9225364",
       "target_annotations_sha256": "2d3028fa6d4413a5273b20edb59655e59ac686a7bb5b0c75098f7eecbb5d9c15",
       "capability_definitions_sha256": "e0c0a3489c25f454e6dd9d17bbe8f90de00704a2cf223d739164b992f713ed65",
-      "v8_spec_sha256": "cd0d10f179eecdc5aaf8f766ef0cc521da98bc5505807edb1eafda303058bd38",
-      "sanitized_fixture": "tests/fixtures/research/exploitbench-target.json",
-      "sanitized_fixture_sha256": "04f8882df1545a28c342aaaa9764c00f440660950842782b9546c09e499f84dc"
+      "v8_spec_sha256": "cd0d10f179eecdc5aaf8f766ef0cc521da98bc5505807edb1eafda303058bd38"
     },
     {
       "name": "exploitbench-v8-runs",
