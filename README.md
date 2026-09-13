@@ -16,6 +16,8 @@ Command Vault indexes **commands**, **scripts**, and **prose** from your penetra
 - **Smart categorization** — 200+ tool names mapped to categories (recon, AD, web, privesc, etc.); unknown names fall back to `misc`
 - **Template generation** — Heuristic placeholders for recognized IPs, lab domains, and credential arguments; not comprehensive secret removal
 - **Multiple writeup types** — Boxes, challenges, and Sherlocks with unified or legacy directory modes
+- **Research knowledge** — Source-backed vulnerability profiles, operational stages, mitigations, diagnostic evidence, and managed C/syz reproducers
+- **Managed-source safety** — Adapter-owned research stays isolated from routine personal-writeup indexing, with embedded snapshot fallback and stable identifiers
 
 ## Installation
 
@@ -32,14 +34,16 @@ source .venv/bin/activate
 If an existing checkout uses `.venv-v2`, use `UV_PROJECT_ENVIRONMENT=.venv-v2 uv sync --frozen` and
 activate `.venv-v2/bin/activate` instead. The examples below assume the selected environment is active.
 
-Alternatively, install the [PyPI release](https://pypi.org/project/command-vault-mcp/0.9.1/)
+Alternatively, install the currently published [PyPI release](https://pypi.org/project/command-vault-mcp/0.9.1/)
 in an activated, pip-enabled virtual environment:
 
 ```bash
 python -m pip install "command-vault-mcp==0.9.1"
 ```
 
-PyPI and GitHub releases are published separately; pin a version when you need reproducible installation.
+PyPI and GitHub releases are published separately. Git release `v1.0.0` contains the research
+knowledge extension; PyPI remains at `0.9.1` until a separate package publication. Pin the source
+tag or package version when you need reproducible installation.
 
 ## Quick Start
 
@@ -58,7 +62,7 @@ vault context '<reference from knowledge>' --max-chars 8000
 
 Replace the reference placeholder with the complete value returned by search. Initialize the database
 through the CLI before registering MCP: the read-only server does not create or migrate it. Back up
-an existing database before schema migration; see [MIGRATION-0.9.md](MIGRATION-0.9.md).
+an existing database before schema migration; see [MIGRATION-1.0.md](MIGRATION-1.0.md).
 
 ## CLI Reference
 
@@ -378,6 +382,25 @@ unavailable. Images remain references; no OCR is performed. Retrieved material i
 executed by the vault.
 
 ## Changelog
+
+### 1.0.0: source-backed research knowledge
+
+Version 1.0 adds schema-v2 research collections, vulnerability and operational-stage profiles,
+structured evidence and mitigation filters, managed source/snapshot context, C and syzlang
+reproducer retrieval, deterministic CyberGym/ExploitGym/ExploitBench adapters, and audited
+candidate/release tooling. Existing box, challenge, Sherlock, command, script, history, and context
+interfaces remain available.
+
+Routine personal indexing remains a one-liner and automatically excludes the managed
+`$WRITEUPS/research` subtree:
+
+```bash
+WRITEUPS="$HOME/writeups" vault --json index --add
+```
+
+See [MIGRATION-1.0.md](MIGRATION-1.0.md),
+[safe indexing](docs/research-knowledge/SAFE-INDEXING.md), and the
+[research documentation index](docs/research-knowledge/README.md).
 
 ### 0.9.1: search continuation and precise diagnostics
 
