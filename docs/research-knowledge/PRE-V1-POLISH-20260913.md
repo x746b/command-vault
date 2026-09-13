@@ -88,6 +88,14 @@ fresh 8,944-file managed-corpus staging tree:
 - full suite: 1,198 tests passed
 - isolated MCP: 20 read-only tools; candidate bytes unchanged after smoke tests
 
+After code checkpoint `36c0ba68ba3e4eb72c289f8df7719224ae611fe0`, a
+create-only copy rebased all 1,753 research paths to the future install root
+`/home/xtk/writeups/research`. That copy has SHA-256
+`98743a3876771d11bdc3f46973bf7e41997f0c6ffa3c282a470170d2c0e06ca1` and
+passed the full corpus/database release audit; the resulting release-manifest
+SHA-256 is
+`bc11e8f50f1ab2534f165246f04db99d56dd12b005ec0137baab3a4d855712a2`.
+
 Every existing research document, vulnerability, chunk, and script ID is
 preserved. The 12 sampled legacy command searches returned identical top-five
 IDs between production and candidate. A warm 120-call comparative smoke run
