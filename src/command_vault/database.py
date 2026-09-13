@@ -1007,9 +1007,9 @@ class Database:
         with self._get_connection() as conn:
             cursor = conn.execute(
                 """INSERT INTO scripts
-                   (writeup_id, language, code, purpose, libraries_used, source_section)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
-                (script.writeup_id, script.language, script.code,
+                   (id, writeup_id, language, code, purpose, libraries_used, source_section)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (script.id, script.writeup_id, script.language, script.code,
                  script.purpose, json.dumps(script.libraries_used),
                  script.source_section)
             )
@@ -1049,8 +1049,10 @@ class Database:
                     """
 
                 if language:
-                    canonical = {'py': 'python', 'js': 'javascript', 'ps1': 'powershell'}.get(language.lower(), language.lower())
-                    aliases = {'python': ('python', 'py'), 'javascript': ('javascript', 'js'), 'powershell': ('powershell', 'ps1')}.get(canonical, (canonical,))
+                    canonical = {'py': 'python', 'js': 'javascript', 'ps1': 'powershell',
+                                 'syzlang': 'syz'}.get(language.lower(), language.lower())
+                    aliases = {'python': ('python', 'py'), 'javascript': ('javascript', 'js'),
+                               'powershell': ('powershell', 'ps1'), 'syz': ('syz', 'syzlang')}.get(canonical, (canonical,))
                     where_clauses.append('s.language IN (' + ','.join('?' for _ in aliases) + ')')
                     params.extend(aliases)
                 if library:
@@ -1498,13 +1500,14 @@ class Database:
     # CHUNK OPERATIONS
     # =========================================================================
 
-    def insert_chunk(self, writeup_id: int, section: str, content: str, chunk_index: int) -> int:
+    def insert_chunk(self, writeup_id: int, section: str, content: str, chunk_index: int,
+                     record_id: Optional[int] = None) -> int:
         """Insert a prose chunk and return its ID."""
         with self._get_connection() as conn:
             cursor = conn.execute(
-                """INSERT INTO writeup_chunks (writeup_id, section, content, chunk_index)
-                   VALUES (?, ?, ?, ?)""",
-                (writeup_id, section, content, chunk_index)
+                """INSERT INTO writeup_chunks (id, writeup_id, section, content, chunk_index)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (record_id, writeup_id, section, content, chunk_index)
             )
             conn.commit()
             return cursor.lastrowid

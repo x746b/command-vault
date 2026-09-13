@@ -110,6 +110,12 @@ Research snapshot export is intentionally out of scope. Recovery retains the
 managed normalized corpus and embedded database fallback, with public upstream
 URL/revision metadata and deterministic adapters available for reacquisition.
 
+Reindexing an existing managed identity preserves unambiguous public child IDs:
+chunk identity is `(chunk_index, section)`, script identity is its declared
+artifact source section, and a sole document vulnerability keeps its profile
+ID. Evidence and validation rows are rebuilt transactionally around those
+stable navigation IDs. Ambiguous old children are never guessed or reused.
+
 ## Compatibility
 
 - Normal read-side clients may filter for `research` after Phase 1.

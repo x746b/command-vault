@@ -439,6 +439,30 @@
           ],
           "default": null
         },
+        "introduced_revision": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Introduced Revision"
+        },
+        "fixed_revision": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fixed Revision"
+        },
         "affected_symbols": {
           "items": {
             "minLength": 1,

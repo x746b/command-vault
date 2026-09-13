@@ -34,7 +34,7 @@ def search_records(db, kind, query=None, *, limit=10, max_chars=12000, cursor=No
         raise ValueError('Query must be at most 1000 characters')
     tags = sorted({t.lower().lstrip('#') for t in (tags or [])})
     language = language.lower() if language else None
-    language = {'py':'python','js':'javascript','ps1':'powershell'}.get(language, language)
+    language = {'py':'python','js':'javascript','ps1':'powershell','syzlang':'syz'}.get(language, language)
     if since:
         datetime.fromisoformat(since)
     settings = dict(search=kind+'-v1', query=query, tool=tool, category=category,
@@ -74,7 +74,8 @@ def search_records(db, kind, query=None, *, limit=10, max_chars=12000, cursor=No
         filters.append('EXISTS (SELECT 1 FROM writeup_tags wt JOIN tags tg ON tg.id=wt.tag_id WHERE wt.writeup_id=w.id AND lower(tg.name)=?)')
         params.append(tag)
     if language:
-        aliases = {'python':['python','py'], 'javascript':['javascript','js'], 'powershell':['powershell','ps1']}.get(language,[language])
+        aliases = {'python':['python','py'], 'javascript':['javascript','js'],
+                   'powershell':['powershell','ps1'], 'syz':['syz','syzlang']}.get(language,[language])
         filters.append('s.language IN ('+','.join('?' for _ in aliases)+')'); params.extend(aliases)
     if library:
         filters.append("s.libraries_used LIKE ? ESCAPE '\\'")

@@ -170,10 +170,14 @@ def test_idempotent_reindex_retains_id_and_replaces_children(db, bundle):
     indexer.index_bundle(bundle[0])
     with db._get_connection() as conn:
         before_id = conn.execute('SELECT id FROM writeups').fetchone()[0]
+        before_chunks = [row[0] for row in conn.execute('SELECT id FROM writeup_chunks ORDER BY chunk_index')]
+        before_vulnerability = conn.execute('SELECT id FROM vulnerabilities').fetchone()[0]
     result = indexer.index_bundle(bundle[0])
     assert result.chunks_indexed == 2
     with db._get_connection() as conn:
         assert conn.execute('SELECT id FROM writeups').fetchone()[0] == before_id
+        assert [row[0] for row in conn.execute('SELECT id FROM writeup_chunks ORDER BY chunk_index')] == before_chunks
+        assert conn.execute('SELECT id FROM vulnerabilities').fetchone()[0] == before_vulnerability
         for table, count in [('writeups', 1), ('source_collections', 1), ('writeup_chunks', 2),
                              ('document_snapshots', 1), ('vulnerabilities', 1), ('writeup_vulnerabilities', 1)]:
             assert conn.execute(f'SELECT count(*) FROM {table}').fetchone()[0] == count
@@ -304,6 +308,16 @@ def test_affected_symbols_are_ordered_json_or_null_and_reindex_idempotently(db, 
     indexer.index_bundle(root)
     with db._get_connection() as conn:
         assert conn.execute('SELECT affected_symbols FROM vulnerabilities').fetchone()[0] is None
+
+
+def test_vulnerability_revisions_are_manifest_backed_and_unknown_stays_null(db, bundle):
+    root, manifest = bundle
+    manifest['vulnerability']['fixed_revision'] = 'fixed-revision'
+    write_manifest(root, manifest)
+    ResearchIndexer(db).index_bundle(root)
+    with db._get_connection() as conn:
+        row = conn.execute('SELECT introduced_revision,fixed_revision FROM vulnerabilities').fetchone()
+        assert tuple(row) == (None, 'fixed-revision')
 
 
 def test_rebuild_removes_all_child_references_and_preserves_global_metadata(db, bundle):
@@ -753,14 +767,22 @@ def test_explicit_syz_script_allowlist_and_nonallowlisted_artifact(db, bundle):
             'validation': 'source_documented', 'license_expression': None,
         },
     ]
+    manifest['operational_stages'] = [{
+        'canonical_name': 'crash reproduction', 'stage_class': 'trigger',
+        'assertion_provenance': 'deterministic', 'validation_status': 'harness_observed',
+        'matched_alias': 'Reproducer', 'evidence_sections': [],
+    }]
     write_manifest(root, manifest)
     result = ResearchIndexer(db).index_bundle(root)
     assert result.scripts_indexed == result.validation_records == result.evidence_links == 1
     with db._get_connection() as conn:
         script = conn.execute('SELECT language,code,purpose FROM scripts').fetchone()
         assert tuple(script) == ('syz', syz.decode(), 'reproducer')
-        evidence = conn.execute('SELECT validation_status,source_anchor_hash FROM evidence_links').fetchone()
-        assert tuple(evidence) == ('harness_observed', hashlib.sha256(syz).hexdigest())
+        evidence = conn.execute('''SELECT e.validation_status,e.source_anchor_hash,s.canonical_name,s.stage_class
+            FROM evidence_links e LEFT JOIN operational_stages s ON s.id=e.stage_id''').fetchone()
+        assert tuple(evidence) == (
+            'harness_observed', hashlib.sha256(syz).hexdigest(), 'crash reproduction', 'trigger',
+        )
         assert conn.execute("SELECT count(*) FROM scripts WHERE language='python'").fetchone()[0] == 0
     results = db.search_scripts('socket inet tcp', language='syz')
     assert len(results) == 1 and results[0].language == 'syz'
@@ -773,12 +795,18 @@ def test_artifact_reindex_rebuilds_evidence_without_orphans_and_preserves_stages
     with db._get_connection() as conn:
         stages = [tuple(row) for row in conn.execute('SELECT * FROM operational_stages ORDER BY id')]
         aliases = [tuple(row) for row in conn.execute('SELECT * FROM stage_aliases ORDER BY stage_id,alias_normalized')]
+        script_id = conn.execute('SELECT id FROM scripts').fetchone()[0]
+        chunk_ids = [row[0] for row in conn.execute('SELECT id FROM writeup_chunks ORDER BY chunk_index')]
+        vulnerability_id = conn.execute('SELECT id FROM vulnerabilities').fetchone()[0]
     second = indexer.index_bundle(root)
     assert first == second
     with db._get_connection() as conn:
         assert [tuple(row) for row in conn.execute('SELECT * FROM operational_stages ORDER BY id')] == stages
         assert [tuple(row) for row in conn.execute('SELECT * FROM stage_aliases ORDER BY stage_id,alias_normalized')] == aliases
         assert conn.execute('SELECT COUNT(*) FROM scripts').fetchone()[0] == 1
+        assert conn.execute('SELECT id FROM scripts').fetchone()[0] == script_id
+        assert [row[0] for row in conn.execute('SELECT id FROM writeup_chunks ORDER BY chunk_index')] == chunk_ids
+        assert conn.execute('SELECT id FROM vulnerabilities').fetchone()[0] == vulnerability_id
         assert conn.execute('SELECT COUNT(*) FROM evidence_links').fetchone()[0] == 8
         assert conn.execute('SELECT COUNT(*) FROM validation_records').fetchone()[0] == 1
         assert conn.execute('''SELECT COUNT(*) FROM validation_records v LEFT JOIN scripts s

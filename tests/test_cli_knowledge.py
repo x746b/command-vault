@@ -10,6 +10,7 @@ import pytest
 from command_vault.database import Database
 from command_vault.indexer import Indexer
 from command_vault.knowledge import Knowledge
+from command_vault.models import Script
 
 
 @pytest.fixture
@@ -107,3 +108,17 @@ def test_cli_continuation_and_required_reporting(corpus):
     records=cli(corpus.db_path,'search','audit','--page','--max-chars','500')
     assert records.returncode==0,records.stderr
     assert 'next_cursor' in json.loads(records.stdout)
+
+
+def test_cli_script_language_alias_and_cursor(corpus):
+    for i in range(2):
+        corpus.insert_script(Script(writeup_id=1, language='syz', code=f'syz_emit({i})'))
+    first = cli(corpus.db_path, 'scripts', '--language', 'syzlang', '--page', '--limit', '1', '--json')
+    assert first.returncode == 0, first.stderr
+    page = json.loads(first.stdout)
+    assert page['results'] and page['results'][0]['language'] == 'syz'
+    assert page['next_cursor']
+    second = cli(corpus.db_path, 'scripts', '--language', 'syz', '--page', '--limit', '1',
+                 '--cursor', page['next_cursor'], '--json')
+    assert second.returncode == 0, second.stderr
+    assert json.loads(second.stdout)['results'][0]['id'] != page['results'][0]['id']

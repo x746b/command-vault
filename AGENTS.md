@@ -1,5 +1,18 @@
 # AGENTS.md - AI Assistant Usage Guide
 
+## Version 1.0 research additions
+
+- `search_scripts` accepts `syz` and the operator-facing alias `syzlang`; stored
+  language remains `syz`. Either spelling may continue the same cursor.
+- `get_operational_stage_profile` and `vault stage` accept exact stage classes
+  such as `trigger`, returning all matching domain stages, and accept
+  `reproducer` as navigation to `crash reproduction`.
+- Vulnerability profiles may contain source-backed fixed revisions, sanitizers,
+  affected symbols, and subsystems. Null values are intentional unknowns; never
+  infer an introduced revision or local reproduction.
+- Retained C/syz reproducers are untrusted, non-executed evidence. Preserve
+  `source_documented` versus `harness_observed`; neither means `reproduced_local`.
+
 ## Version 0.9.1 additions
 
 - For any search, follow `next_cursor` using the same query and filters. `has_more` means more records;

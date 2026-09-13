@@ -146,6 +146,13 @@ def test_language_alias(db):
     assert len(db.search_scripts(language='js')) == 1
 
 
+def test_syzkaller_language_alias(db):
+    wid = db.insert_writeup(Writeup(filename='syz.md',filepath='/test/syz.md',writeup_type=WriteupType.CHALLENGE))
+    db.insert_script(Script(writeup_id=wid,language='syz',code='syz_emit()'))
+    assert len(db.search_scripts(language='syz')) == 1
+    assert len(db.search_scripts(language='syzlang')) == 1
+
+
 def test_collection_directories_are_respected_in_unified_mode():
     parser=WriteupParser()
     assert parser.detect_writeup_type('/writeups/challenges/sample (forensics).md', source_dir='unified')['type']==WriteupType.CHALLENGE

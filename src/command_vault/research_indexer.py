@@ -150,8 +150,15 @@ class ResearchIndexer:
                 collision = conn.execute('SELECT id FROM writeups WHERE filepath=?', (identity,)).fetchone()
                 if collision is not None and (old is None or collision['id'] != old['id']):
                     raise ValueError('Research filepath conflicts with another writeup')
+                previous = self._prior_child_ids(conn, old['id']) if old else {
+                    'chunks': {}, 'scripts': {}, 'vulnerability': None,
+                }
                 if old:
                     self._clear_children(conn, old['id'])
+                    if previous['vulnerability'] is not None and conn.execute(
+                        'SELECT 1 FROM vulnerabilities WHERE id=?', (previous['vulnerability'],)
+                    ).fetchone() is not None:
+                        previous['vulnerability'] = None
                 conn.execute('''INSERT INTO writeups
                     (id,filename,filepath,writeup_type,title,source_collection_id,external_id,domain,
                      document_kind,upstream_url,content_hash,parser_version)
@@ -169,7 +176,10 @@ class ResearchIndexer:
                 self.db._set_writeup_tags(conn, writeup_id, sorted(tags))
                 stored_chunks = []
                 for chunk in chunks:
-                    chunk_id = self.db.insert_chunk(writeup_id, chunk['section'], chunk['content'], chunk['chunk_index'])
+                    chunk_id = previous['chunks'].get((chunk['chunk_index'], chunk['section']))
+                    chunk_id = self.db.insert_chunk(
+                        writeup_id, chunk['section'], chunk['content'], chunk['chunk_index'], record_id=chunk_id,
+                    )
                     stored_chunks.append((chunk_id, chunk))
                 conn.execute('''INSERT INTO document_snapshots
                     (writeup_id,content_blob,compression,content_hash,uncompressed_bytes) VALUES (?,?,?,?,?)''',
@@ -178,21 +188,26 @@ class ResearchIndexer:
                 vulnerability_id = None
                 if vulnerability is not None:
                     cursor = conn.execute('''INSERT INTO vulnerabilities
-                        (canonical_id,external_task_id,project_name,summary,summary_provenance,
-                         vulnerability_class,class_provenance,sanitizer,architecture,platform,subsystem,language,affected_symbols)
-                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)''',
-                        (canonical_id, manifest.external_id, manifest.project, summary,
+                        (id,canonical_id,external_task_id,project_name,summary,summary_provenance,
+                         vulnerability_class,class_provenance,sanitizer,architecture,platform,subsystem,language,
+                         affected_symbols,introduced_revision,fixed_revision)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                        (previous['vulnerability'], canonical_id, manifest.external_id, manifest.project, summary,
                          vulnerability.summary_provenance, vulnerability.vulnerability_class,
                          vulnerability.class_provenance, vulnerability.sanitizer, vulnerability.architecture,
                          vulnerability.platform, vulnerability.subsystem, manifest.language,
-                         json.dumps(vulnerability.affected_symbols, ensure_ascii=False) if vulnerability.affected_symbols else None))
+                         json.dumps(vulnerability.affected_symbols, ensure_ascii=False) if vulnerability.affected_symbols else None,
+                         vulnerability.introduced_revision, vulnerability.fixed_revision))
                     vulnerability_id = cursor.lastrowid
                     conn.execute('INSERT INTO writeup_vulnerabilities (writeup_id,vulnerability_id) VALUES (?,?)',
                                  (writeup_id, vulnerability_id))
+                indexed_scripts = []
                 for artifact, source_hash, code, artifact_hash, normalized_hash in scripts:
+                    source_section = f'Artifact: {artifact.path}'
+                    script_id = previous['scripts'].get(source_section)
                     script_id = self.db.insert_script(Script(
-                        writeup_id=writeup_id, language=artifact.language, code=code, purpose=artifact.kind,
-                        source_section=f'Artifact: {artifact.path}',
+                        id=script_id, writeup_id=writeup_id, language=artifact.language,
+                        code=code, purpose=artifact.kind, source_section=source_section,
                     ))
                     conn.execute('UPDATE scripts SET artifact_hash=?,normalized_hash=? WHERE id=?',
                                  (artifact_hash, normalized_hash, script_id))
@@ -203,7 +218,11 @@ class ResearchIndexer:
                     conn.execute('''INSERT INTO validation_records
                         (artifact_kind,artifact_id,validation_level,status,source_reference) VALUES (?,?,?,?,?)''',
                         ('script', script_id, artifact.validation, artifact.validation, artifact.path))
+                    indexed_scripts.append((artifact, script_id))
                 stages_linked, stage_evidence = self._index_stages(conn, writeup_id, manifest, stored_chunks)
+                self._link_reproducer_stages(
+                    conn, writeup_id, manifest, indexed_scripts,
+                )
                 mitigations_indexed, mitigation_links, mitigation_evidence = self._index_mitigations(
                     conn, writeup_id, vulnerability_id, snapshot.content_hash, manifest, stored_chunks,
                 )
@@ -212,9 +231,69 @@ class ResearchIndexer:
             bundles_seen=1, documents_indexed=1, chunks_indexed=len(chunks),
             vulnerabilities_indexed=int(vulnerability is not None), redactions_by_type=dict(sorted(counts.items())),
             scripts_indexed=len(scripts), stages_linked=stages_linked,
-            evidence_links=len(scripts) + stage_evidence + mitigation_evidence, validation_records=len(scripts),
+            evidence_links=len(scripts) + stage_evidence + mitigation_evidence,
+            validation_records=len(scripts),
             mitigations_indexed=mitigations_indexed, mitigation_links=mitigation_links,
         )
+
+    @staticmethod
+    def _prior_child_ids(conn, writeup_id):
+        """Capture unambiguous public child identities before atomic rebuild."""
+        chunks, duplicate_chunks = {}, set()
+        for row in conn.execute('''SELECT id,chunk_index,section FROM writeup_chunks
+            WHERE writeup_id=? ORDER BY id''', (writeup_id,)):
+            key = (row['chunk_index'], row['section'])
+            if key in chunks:
+                duplicate_chunks.add(key)
+            else:
+                chunks[key] = row['id']
+        for key in duplicate_chunks:
+            chunks.pop(key, None)
+        scripts, duplicate_scripts = {}, set()
+        for row in conn.execute('''SELECT id,source_section FROM scripts
+            WHERE writeup_id=? ORDER BY id''', (writeup_id,)):
+            key = row['source_section']
+            if key is None or key in scripts:
+                duplicate_scripts.add(key)
+            else:
+                scripts[key] = row['id']
+        for key in duplicate_scripts:
+            scripts.pop(key, None)
+        vulnerabilities = [row[0] for row in conn.execute(
+            'SELECT vulnerability_id FROM writeup_vulnerabilities WHERE writeup_id=? ORDER BY vulnerability_id',
+            (writeup_id,))]
+        vulnerability = vulnerabilities[0] if len(vulnerabilities) == 1 else None
+        return {'chunks': chunks, 'scripts': scripts, 'vulnerability': vulnerability}
+
+    @staticmethod
+    def _link_reproducer_stages(conn, writeup_id, manifest, indexed_scripts):
+        """Attach retained reproducers to an explicitly declared reproduction stage.
+
+        The artifact's own validation status remains authoritative; this only
+        adds navigation and never upgrades source/harness evidence to a local
+        reproduction claim.
+        """
+        reproducers = [(artifact, script_id) for artifact, script_id in indexed_scripts
+                       if artifact.kind == 'reproducer']
+        if not reproducers:
+            return 0
+        declared = any(stage.canonical_name == 'crash reproduction'
+                       and stage.stage_class == 'trigger'
+                       for stage in manifest.operational_stages)
+        if not declared:
+            return 0
+        stage = conn.execute('''SELECT id FROM operational_stages
+            WHERE canonical_name=? AND domain=?''',
+            ('crash reproduction', manifest.domain)).fetchone()
+        if stage is None:
+            raise ValueError('Declared crash reproduction stage was not indexed')
+        for artifact, script_id in reproducers:
+            changed = conn.execute('''UPDATE evidence_links SET stage_id=?
+                WHERE writeup_id=? AND script_id=? AND validation_status=?''',
+                (stage['id'], writeup_id, script_id, artifact.validation)).rowcount
+            if changed != 1:
+                raise ValueError('Reproducer script evidence link is missing or ambiguous')
+        return len(reproducers)
 
     @staticmethod
     def _index_mitigations(conn, writeup_id, vulnerability_id, content_hash, manifest, chunks):

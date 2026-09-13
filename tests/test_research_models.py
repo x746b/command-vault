@@ -128,6 +128,16 @@ def test_affected_symbols_default_order_round_trip_and_schema():
     assert schema['items'] == {'minLength': 1, 'pattern': r'\S', 'type': 'string'}
 
 
+def test_vulnerability_revision_fields_round_trip_and_schema():
+    value = ResearchVulnerability(introduced_revision='introduced', fixed_revision='fixed')
+    restored = ResearchVulnerability.model_validate_json(value.model_dump_json())
+    assert restored.introduced_revision == 'introduced'
+    assert restored.fixed_revision == 'fixed'
+    properties = json.loads(SCHEMA_PATH.read_text())['$defs']['ResearchVulnerability']['properties']
+    assert properties['introduced_revision']['default'] is None
+    assert properties['fixed_revision']['default'] is None
+
+
 @pytest.mark.parametrize('symbols', [[''], ['   '], ['\t\n'], ['same', 'same'], [1], None, 'single'])
 def test_invalid_affected_symbols_are_rejected(symbols):
     with pytest.raises(ValidationError, match='affected_symbols'):

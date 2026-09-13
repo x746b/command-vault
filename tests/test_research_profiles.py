@@ -227,6 +227,10 @@ def stage_db(db):
         conn.executemany('INSERT INTO operational_stages (id,canonical_name,domain,stage_class) VALUES (?,?,?,?)', [
             (8, 'Crash Diagnosis', 'application', 'diagnose'),
             (9, 'Reach', 'userspace', 'reach'), (10, 'Remediation', 'other-domain', 'remediation'),
+            (11, 'Crash Reproduction', 'kernel', 'trigger'),
+            (12, 'Memory Trigger', 'application', 'trigger'),
+            (13, 'Prerequisite', 'application', 'reach'),
+            (14, 'crash reproduction', 'application', 'trigger'),
         ])
         conn.executemany('INSERT INTO stage_aliases (stage_id,alias,alias_normalized,provenance) VALUES (?,?,?,?)', [
             (7, 'Shared   Diagnostic', 'shared diagnostic', 'source'),
@@ -259,6 +263,29 @@ def test_stage_canonical_normalization_alias_match_and_exact_domain(stage_db):
     assert profiles.get_operational_stage('unsupported').matches == []
     assert profiles.get_operational_stage('crash diagnosis', domain='kern').matches == []
     assert profiles.get_operational_stage("' OR 1=1 --").matches == []
+
+
+def test_stage_class_navigation_and_reproducer_query_alias(stage_db):
+    profiles = ResearchProfiles(stage_db)
+    trigger = profiles.get_operational_stage('  TRIGGER  ')
+    assert trigger.total_matches == 3 and not trigger.truncated
+    assert [(item.id, item.canonical_name) for item in trigger.matches] == [
+        (14, 'crash reproduction'), (12, 'Memory Trigger'), (11, 'Crash Reproduction'),
+    ]
+    assert all(item.matched_alias is None for item in trigger.matches)
+    kernel_trigger = profiles.get_operational_stage('trigger', domain='KERNEL')
+    assert kernel_trigger.total_matches == 1
+    assert [(item.id, item.canonical_name) for item in kernel_trigger.matches] == [(11, 'Crash Reproduction')]
+    # An exact canonical name that is also a class term retains its prior exact-match behavior.
+    assert [(item.id, item.canonical_name) for item in profiles.get_operational_stage('reach').matches] == [
+        (9, 'Reach'),
+    ]
+    reproducer = profiles.get_operational_stage('reproducer')
+    assert [(item.id, item.canonical_name, item.matched_alias) for item in reproducer.matches] == [
+        (14, 'crash reproduction', None),
+        (11, 'Crash Reproduction', None),
+    ]
+    assert profiles.get_operational_stage('triggering').matches == []
 
 
 def test_stage_aliases_edges_direction_counterpart_domain_and_evidence(stage_db):

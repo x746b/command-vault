@@ -16,6 +16,9 @@ _EVIDENCE_FILTER = '''(e.vulnerability_id=? OR e.writeup_id IN
     (SELECT writeup_id FROM writeup_vulnerabilities WHERE vulnerability_id=?))'''
 _SOURCE_COLUMNS = '''w.id AS document_id,w.filename,w.domain,w.upstream_url,
     w.content_hash,s.name AS source_name,s.revision'''
+_STAGE_CLASSES = frozenset({
+    'reach', 'trigger', 'diagnose', 'primitive', 'control', 'objective', 'remediation',
+})
 
 
 def _source(row):
@@ -105,13 +108,32 @@ class ResearchProfiles:
                     raise ValueError('Research profiles require database schema 2 or newer')
                 # Connection-local normalization; no schema or stored values change.
                 conn.create_function('_research_stage_normalize', 1, _normalize_stage, deterministic=True)
-                predicate = '''(_research_stage_normalize(s.canonical_name)=? OR EXISTS (
-                    SELECT 1 FROM stage_aliases a WHERE a.stage_id=s.id AND a.alias_normalized=?))'''
-                parameters = [normalized, normalized]
-                if domain is not None:
-                    predicate += ' AND s.domain=? COLLATE NOCASE'
-                    parameters.append(domain)
-                total = conn.execute(f'SELECT COUNT(*) FROM operational_stages s WHERE {predicate}', parameters).fetchone()[0]
+                def scope(predicate, parameters):
+                    if domain is not None:
+                        predicate += ' AND s.domain=? COLLATE NOCASE'
+                        parameters = [*parameters, domain]
+                    return predicate, parameters
+
+                if normalized == 'reproducer':
+                    predicate, parameters = scope(
+                        '_research_stage_normalize(s.canonical_name)=?', ['crash reproduction'],
+                    )
+                    match_kind = 'query_alias'
+                else:
+                    predicate, parameters = scope('''(_research_stage_normalize(s.canonical_name)=? OR EXISTS (
+                        SELECT 1 FROM stage_aliases a WHERE a.stage_id=s.id AND a.alias_normalized=?))''',
+                        [normalized, normalized])
+                    match_kind = 'exact'
+                total = conn.execute(f'SELECT COUNT(*) FROM operational_stages s WHERE {predicate}',
+                                     parameters).fetchone()[0]
+                # A source-backed exact canonical or alias match always wins over
+                # broader class navigation.  This keeps existing exact lookups
+                # stable when a canonical name happens to be a stage class.
+                if not total and normalized in _STAGE_CLASSES:
+                    predicate, parameters = scope('s.stage_class=?', [normalized])
+                    total = conn.execute(f'SELECT COUNT(*) FROM operational_stages s WHERE {predicate}',
+                                         parameters).fetchone()[0]
+                    match_kind = 'stage_class'
                 rows = conn.execute(f'''SELECT s.id,s.canonical_name,s.domain,s.stage_class,s.description
                     FROM operational_stages s WHERE {predicate}
                     ORDER BY s.domain COLLATE NOCASE,s.canonical_name COLLATE NOCASE,s.id LIMIT ?''',
@@ -120,7 +142,8 @@ class ResearchProfiles:
                 truncated = total > len(rows)
                 for row in rows:
                     matched_alias = None
-                    if _normalize_stage(row['canonical_name']) != normalized:
+                    if ((match_kind == 'exact' and _normalize_stage(row['canonical_name']) != normalized)
+                            or match_kind == 'query_alias'):
                         alias = conn.execute('''SELECT alias FROM stage_aliases
                             WHERE stage_id=? AND alias_normalized=? ORDER BY alias COLLATE NOCASE,alias LIMIT ?''',
                             (row['id'], normalized, 1)).fetchone()

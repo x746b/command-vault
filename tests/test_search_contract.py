@@ -183,3 +183,22 @@ async def test_mcp_cursor_contract_and_output_models(records):
         assert bad.is_error
         missing=(await client.call_tool('search_knowledge',{'query':'read audit logs','required_terms':['ZQXJ92814']})).structured_content
         assert missing['unmatched_required_terms']==['ZQXJ92814']
+
+
+def test_paged_script_language_alias_and_cursor_canonicalization(records):
+    for i in range(2):
+        records.insert_script(Script(writeup_id=1, language='syz', code=f'syz_emit({i})'))
+    first = search_records(records, 'script', language='syzlang', limit=1, max_chars=20000)
+    assert first.results and first.results[0].language == 'syz'
+    assert first.next_cursor
+    second = search_records(records, 'script', language='syz', limit=1, max_chars=20000,
+                            cursor=first.next_cursor)
+    assert second.results and second.results[0].id != first.results[0].id
+
+
+@pytest.mark.anyio
+async def test_mcp_script_language_alias(records):
+    records.insert_script(Script(writeup_id=1, language='syz', code='syz_emit()'))
+    async with Client(create_server(records)) as client:
+        page = (await client.call_tool('search_scripts', {'language': 'syzlang'})).structured_content
+    assert page['results'] and page['results'][0]['language'] == 'syz'

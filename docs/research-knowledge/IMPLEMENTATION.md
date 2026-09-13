@@ -500,6 +500,32 @@ and corpus tar SHA-256 is
 The final path-rebase/auditor focused suite passes 22 tests and the full suite
 passes 1,181 tests.
 
+### 2026-09-13 — Approved pre-v1.0 usability polish
+
+The final user-observed gaps were reproduced against production and corrected
+in a create-only candidate. `syzlang` now canonicalizes to stored `syz` through
+legacy and paged search, and cursor identity is shared between the spellings.
+Exact stage-class lookup returns deterministic multi-domain matches, while
+`reproducer` navigates to canonical `crash reproduction`.
+
+Real pinned-source regeneration populated 27 kernelCTF and 41 ExploitBench
+fixed revisions. KernelCTF enrichment is limited to 22 explicit KASAN markers,
+21 reviewed headline classes/symbol sets, and 27 safe explicit patch-title
+subsystems. All introduced revisions remain null. All 345 C/syz reproducers now
+carry a stage link while retaining 318 `harness_observed`, 27
+`source_documented`, and zero `reproduced_local` validation statuses.
+
+Routine read-side coding was delegated once to Luna (language alias) and Terra
+(stage-class lookup), with no recursive delegation. Daybreak directly owned
+source interpretation, adapter/indexer work, integration, real candidate
+construction, MCP/CLI checks, and release audit. The complete ledger and exact
+candidate evidence are in `PRE-V1-POLISH-20260913.md`.
+
+The candidate preserves all existing public research document, vulnerability,
+chunk, and script IDs. The integrated suite passes 1,198 tests. Production and
+the Git remote remain unchanged pending the explicit replacement and release
+checkpoints.
+
 ## Acceptance notes
 
 The implementation plan remains the governing contract. Passing a subagent's
